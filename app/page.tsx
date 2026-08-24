@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, ReactNode, useState } from "react";
 
 import type {
   CompanyBrief,
@@ -75,47 +75,55 @@ export default function Home() {
   const company = result?.company;
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#07111f] text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(34,211,238,0.15),transparent_35%),radial-gradient(circle_at_90%_30%,rgba(129,140,248,0.12),transparent_30%)]" />
-
-      <div className="relative mx-auto w-full max-w-6xl px-5 py-8 sm:px-8">
-        <nav className="flex items-center justify-between">
+    <main className="min-h-screen bg-[#f7f4ee] text-[#111]">
+      <div className="mx-auto w-full max-w-6xl px-5 pb-20 pt-6 sm:px-8">
+        <header className="flex items-center justify-between border-b border-[#d9d4c8] pb-5">
           <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-xl bg-cyan-300 font-black text-[#07111f]">
-              V
-            </div>
+            <span className="grid size-8 place-items-center border border-[#111] text-sm font-semibold">
+              G
+            </span>
             <div>
-              <p className="font-semibold">Founder/GTM Radar</p>
-              <p className="text-xs text-slate-400">Powered by Vaaya</p>
+              <p className="text-sm font-semibold tracking-tight">GTM Radar</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#6b665c]">
+                Powered by Vaaya
+              </p>
             </div>
           </div>
-          <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-300">
-            Live research
-          </span>
-        </nav>
-
-        <section className="pb-10 pt-16 text-center sm:pt-20">
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-300">
-            From URL to GTM intelligence
+          <p className="hidden font-mono text-[11px] uppercase tracking-[0.18em] text-[#6b665c] sm:block">
+            Research · Signals · People · Action
           </p>
-          <h1 className="mx-auto mt-4 max-w-4xl text-4xl font-semibold tracking-[-0.04em] sm:text-6xl">
-            Understand any company before you reach out.
-          </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
-            Enter a company website. Vaaya turns public information into a
-            concise company profile and practical GTM takeaways.
-          </p>
+        </header>
 
-          <form
-            onSubmit={handleSubmit}
-            className="mx-auto mt-9 flex max-w-3xl flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3 shadow-2xl shadow-cyan-950/30 backdrop-blur sm:flex-row"
-          >
-            <label className="sr-only" htmlFor="company-url">
-              Company URL
-            </label>
+        <section className="grid gap-10 border-b border-dashed border-[#d9d4c8] py-14 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+          <div>
+            <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#6b665c]">
+              From one company URL
+            </p>
+            <h1 className="mt-5 max-w-3xl font-serif text-5xl leading-[1.05] tracking-[-0.03em] sm:text-6xl">
+              Understand any company before you reach out.
+            </h1>
+          </div>
+          <p className="max-w-md font-mono text-xs uppercase leading-6 tracking-[0.12em] text-[#6b665c]">
+            Start with a public website. Radar builds the company brief, market
+            context, relevant people, and a simple GTM map.
+          </p>
+        </section>
+
+        <form
+          onSubmit={handleSubmit}
+          className="blueprint relative mt-10 border border-[#d9d4c8] bg-white p-5 sm:p-6"
+        >
+          <div className="mb-4 flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.2em] text-[#6b665c]">
+            <span>Describe the company once</span>
+            <span>Cached 12h</span>
+          </div>
+          <label htmlFor="company-url" className="sr-only">
+            Company URL
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <input
               id="company-url"
-              className="min-h-13 flex-1 rounded-xl border border-white/10 bg-[#0b1728] px-5 text-base text-white outline-none ring-cyan-300/40 placeholder:text-slate-500 focus:ring-4"
+              className="min-h-14 flex-1 border border-[#d9d4c8] bg-[#f7f4ee] px-4 text-base outline-none focus:border-[#111]"
               type="url"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
@@ -123,100 +131,77 @@ export default function Home() {
               required
             />
             <button
-              className="min-h-13 rounded-xl bg-cyan-300 px-7 font-semibold text-[#07111f] transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
+              className="min-h-14 rounded-full bg-[#111] px-8 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-[#8a857b]"
               type="submit"
               disabled={isLoading}
             >
-              {isLoading ? "Researching..." : "Analyze company"}
+              {isLoading ? "Building radar" : "Analyze company"}
             </button>
-          </form>
-          <p className="mt-3 text-xs text-slate-500">
-            Cached for 12 hours to prevent duplicate paid calls.
+          </div>
+          <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+            Cost-capped · Manual outreach only · No invented contacts
           </p>
-        </section>
+        </form>
 
         {error ? (
-          <div className="mx-auto mb-8 max-w-3xl rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-center text-sm text-red-200">
+          <p className="mt-6 border border-[#d9b4b0] bg-[#f8ece9] px-4 py-3 text-sm text-[#7a2e24]">
             {error}
-          </div>
+          </p>
         ) : null}
 
-        {isLoading ? <LoadingStory /> : null}
-        {!isLoading && !company ? <EmptyState /> : null}
+        {isLoading ? <LoadingPanel /> : null}
+        {!isLoading && !company ? <LandingPreview /> : null}
         {company ? <CompanyReport company={company} result={result} /> : null}
       </div>
     </main>
   );
 }
 
-function LoadingStory() {
+function LoadingPanel() {
+  const steps = [
+    "Read website",
+    "Extract brief",
+    "Find signals",
+    "Map competitors",
+    "Find people",
+  ];
+
   return (
-    <section
-      className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-white/[0.04] p-7"
-      aria-live="polite"
-    >
-      <div className="flex items-center gap-4">
-        <span className="size-5 animate-spin rounded-full border-2 border-cyan-300 border-t-transparent" />
-        <div>
-          <h2 className="font-semibold">Building your company brief</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Vaaya is reading and structuring public company information.
-          </p>
-        </div>
-      </div>
-      <div className="mt-7 grid gap-3 sm:grid-cols-5">
-        <LoadingStep number="01" label="Reading website" active />
-        <LoadingStep number="02" label="Extracting company profile" />
-        <LoadingStep number="03" label="Finding market signals" />
-        <LoadingStep number="04" label="Mapping competitors" />
-        <LoadingStep number="05" label="Finding people" />
+    <section className="mt-12 border border-dashed border-[#d9d4c8] p-6">
+      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#6b665c]">
+        Workflow in progress
+      </p>
+      <h2 className="mt-3 font-serif text-3xl">Building the GTM radar</h2>
+      <div className="mt-8 grid gap-px bg-[#d9d4c8] sm:grid-cols-5">
+        {steps.map((step, index) => (
+          <div key={step} className="bg-[#f7f4ee] p-4">
+            <p className="font-mono text-[11px] text-[#6b665c]">
+              {String(index + 1).padStart(2, "0")}
+            </p>
+            <p className="mt-3 text-sm">{step}</p>
+          </div>
+        ))}
       </div>
     </section>
   );
 }
 
-function LoadingStep({
-  number,
-  label,
-  active = false,
-}: {
-  number: string;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border p-4 text-left ${
-        active
-          ? "border-cyan-300/30 bg-cyan-300/10"
-          : "border-white/10 bg-white/[0.03]"
-      }`}
-    >
-      <p className="text-xs font-semibold text-cyan-300">{number}</p>
-      <p className="mt-2 text-sm text-slate-200">{label}</p>
-    </div>
-  );
-}
-
-function EmptyState() {
-  const outcomes = [
-    ["Company profile", "What they do, sell, and how they position."],
-    ["Market signals", "Recent launches, funding, hiring, and news."],
-    ["People to contact", "Relevant leaders, contact details, and angles."],
+function LandingPreview() {
+  const items = [
+    ["01 Company", "Overview, products, ICP, industry."],
+    ["02 Market", "Cited news, launches, and competitors."],
+    ["03 People", "Founders, growth, sales — and why them."],
+    ["04 Action", "Who to contact, what to say, what to watch."],
   ];
 
   return (
-    <section className="grid gap-4 pb-12 sm:grid-cols-3">
-      {outcomes.map(([title, description], index) => (
-        <div
-          key={title}
-          className="rounded-3xl border border-white/10 bg-white/[0.035] p-6"
-        >
-          <span className="text-xs font-semibold text-cyan-300">
-            0{index + 1}
-          </span>
-          <h2 className="mt-5 text-lg font-semibold">{title}</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">{description}</p>
+    <section className="mt-14 grid gap-px bg-[#d9d4c8] sm:grid-cols-2 lg:grid-cols-4">
+      {items.map(([title, copy]) => (
+        <div key={title} className="min-h-44 bg-[#f7f4ee] p-6">
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#6b665c]">
+            {title}
+          </p>
+          <p className="mt-8 text-sm leading-6">{copy}</p>
         </div>
       ))}
     </section>
@@ -230,109 +215,79 @@ function CompanyReport({
   company: CompanyBrief;
   result: AnalyzeResponse;
 }) {
-  return (
-    <section className="space-y-5 pb-16">
-      <div className="overflow-hidden rounded-3xl border border-white/10 bg-white text-[#0b1728]">
-        <div className="border-b border-slate-200 bg-[linear-gradient(120deg,#ecfeff,#eef2ff)] p-7 sm:p-10">
-          <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
-            <div>
-              <div className="mb-5 flex flex-wrap gap-2">
-                {company.industry ? <Tag>{company.industry}</Tag> : null}
-                {company.business_model ? (
-                  <Tag>{company.business_model}</Tag>
-                ) : null}
-                {result.cached ? <Tag>Cached result</Tag> : <Tag>Fresh research</Tag>}
-              </div>
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-700">
-                Company intelligence brief
-              </p>
-              <h2 className="mt-2 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">
-                {company.company_name}
-              </h2>
-              {company.tagline ? (
-                <p className="mt-3 max-w-2xl text-lg text-slate-600">
-                  {company.tagline}
-                </p>
-              ) : null}
-            </div>
-            <a
-              href={result.requested_url}
-              target="_blank"
-              rel="noreferrer"
-              className="shrink-0 text-sm font-semibold text-cyan-800 hover:text-cyan-600"
-            >
-              Visit website ↗
-            </a>
-          </div>
-        </div>
+  const market = result.market ?? { signals: [], competitors: [] };
+  const people = result.people ?? [];
 
-        <div className="grid gap-8 p-7 sm:p-10 lg:grid-cols-[1.4fr_0.6fr]">
-          <article>
-            <SectionLabel>Company overview</SectionLabel>
-            <p className="mt-3 text-base leading-7 text-slate-700">
-              {company.description ?? "No supported description was found."}
+  return (
+    <section className="mt-14 space-y-10">
+      <div className="grid gap-10 border-b border-[#d9d4c8] pb-10 lg:grid-cols-[1.35fr_0.65fr]">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#6b665c]">
+            Company brief {result.cached ? "· cached" : "· live"}
+          </p>
+          <h2 className="mt-4 font-serif text-5xl leading-[1.05] tracking-[-0.03em]">
+            {company.company_name}
+          </h2>
+          {company.tagline ? (
+            <p className="mt-5 max-w-2xl text-lg leading-8 text-[#3f3b34]">
+              {company.tagline}
             </p>
-          </article>
-          <dl className="grid grid-cols-2 gap-4 lg:grid-cols-1">
-            <Fact label="Industry" value={company.industry} />
-            <Fact label="Business model" value={company.business_model} />
-            <Fact label="Headquarters" value={company.headquarters} />
-          </dl>
+          ) : null}
+          <p className="mt-5 max-w-3xl text-base leading-8 text-[#3f3b34]">
+            {company.description ?? "No supported description was found."}
+          </p>
         </div>
+        <aside className="grid grid-cols-2 gap-px self-start bg-[#d9d4c8]">
+          <Stat label="Signals" value={market.signals.length} />
+          <Stat label="Competitors" value={market.competitors.length} />
+          <Stat label="People" value={people.length} />
+          <Stat label="Cost" value={`${result.charged_cents ?? 0}c`} />
+        </aside>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <ListCard
-          eyebrow="What they sell"
-          title="Products & offerings"
-          items={company.products}
-          empty="No clear products were found."
-        />
-        <ListCard
-          eyebrow="Who they serve"
+      <div className="grid gap-px bg-[#d9d4c8] sm:grid-cols-3">
+        <Fact label="Industry" value={company.industry} />
+        <Fact label="Model" value={company.business_model} />
+        <Fact label="HQ" value={company.headquarters} />
+      </div>
+
+      <div className="grid gap-10 lg:grid-cols-2">
+        <TagList title="Products" items={company.products} empty="None found." />
+        <TagList
           title="Target customers"
           items={company.target_customers}
-          empty="No clear target customers were found."
+          empty="None found."
         />
       </div>
 
-      <MarketSection
-        market={result.market}
-        error={result.market_error ?? null}
-      />
+      <GtmMap company={company} market={market} people={people} />
 
-      <PeopleSection people={result.people} error={result.people_error ?? null} />
+      <MarketSection market={market} error={result.market_error ?? null} />
+      <PeopleSection people={people} error={result.people_error ?? null} />
 
-      <GtmMap company={company} market={result.market} people={result.people} />
-
-      <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
-        <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.08] p-7 sm:p-8">
-          <SectionLabel light>GTM intelligence</SectionLabel>
-          <h3 className="mt-2 text-2xl font-semibold">What stands out</h3>
-          <div className="mt-6 space-y-4">
+      <div className="grid gap-10 lg:grid-cols-2">
+        <div>
+          <Eyebrow>Outreach intelligence</Eyebrow>
+          <h3 className="mt-3 font-serif text-3xl">What stands out</h3>
+          <div className="mt-6 divide-y divide-[#d9d4c8] border-y border-[#d9d4c8]">
             {company.gtm_takeaways.length ? (
-              company.gtm_takeaways.map((takeaway, index) => (
-                <div key={takeaway} className="flex gap-4">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-full bg-cyan-300 text-sm font-bold text-[#07111f]">
-                    {index + 1}
+              company.gtm_takeaways.map((item, index) => (
+                <div key={item} className="flex gap-4 py-4">
+                  <span className="font-mono text-xs text-[#6b665c]">
+                    {String(index + 1).padStart(2, "0")}
                   </span>
-                  <p className="pt-1 text-sm leading-6 text-slate-200">
-                    {takeaway}
-                  </p>
+                  <p className="text-sm leading-6">{item}</p>
                 </div>
               ))
             ) : (
-              <p className="text-sm text-slate-400">
-                No evidence-backed GTM takeaway was found.
-              </p>
+              <p className="py-4 text-sm text-[#6b665c]">No takeaway returned.</p>
             )}
           </div>
         </div>
-
-        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-7 sm:p-8">
-          <SectionLabel light>Research trail</SectionLabel>
-          <h3 className="mt-2 text-2xl font-semibold">Key links</h3>
-          <div className="mt-5 space-y-2">
+        <div>
+          <Eyebrow>Research trail</Eyebrow>
+          <h3 className="mt-3 font-serif text-3xl">Important links</h3>
+          <div className="mt-6 divide-y divide-[#d9d4c8] border-y border-[#d9d4c8]">
             {company.key_links.length ? (
               company.key_links.map((link) => (
                 <a
@@ -340,48 +295,22 @@ function CompanyReport({
                   href={link.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-200 transition hover:border-cyan-300/30 hover:bg-cyan-300/10"
+                  className="flex items-center justify-between py-4 text-sm hover:underline"
                 >
                   <span>{link.label}</span>
-                  <span className="text-cyan-300">↗</span>
+                  <span className="font-mono text-[11px] text-[#6b665c]">
+                    {new URL(link.url).hostname.replace(/^www\./, "")}
+                  </span>
                 </a>
               ))
             ) : (
-              <p className="text-sm text-slate-400">No key links were returned.</p>
+              <p className="py-4 text-sm text-[#6b665c]">No key links.</p>
             )}
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 text-xs text-slate-400 sm:flex-row sm:items-center">
-        <p>
-          {result.cached
-            ? "Served from the 12-hour cache · No new Vaaya charge"
-            : `Vaaya charged ${result.charged_cents ?? 0} cents for this analysis`}
-          {typeof result.balance_remaining_cents === "number"
-            ? ` · ${result.balance_remaining_cents} cents remaining`
-            : ""}
-        </p>
-        <details>
-          <summary className="cursor-pointer font-medium text-slate-300">
-            Evidence & debug
-          </summary>
-          <pre className="mt-3 max-h-72 max-w-2xl overflow-auto whitespace-pre-wrap rounded-xl bg-black/30 p-4 text-[11px] leading-5">
-            {JSON.stringify(
-              {
-                provider: result.provider,
-                market_provider: result.market_provider,
-                people_provider: result.people_provider,
-                requested_url: result.requested_url,
-                evidence: result.evidence,
-                details: result.details,
-              },
-              null,
-              2,
-            )}
-          </pre>
-        </details>
-      </div>
+      <AuditFooter result={result} />
     </section>
   );
 }
@@ -390,102 +319,71 @@ function MarketSection({
   market,
   error,
 }: {
-  market?: MarketIntelligence;
+  market: MarketIntelligence;
   error: string | null;
 }) {
-  const signals = market?.signals ?? [];
-  const competitors = market?.competitors ?? [];
-
   return (
-    <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04]">
-      <div className="border-b border-white/10 p-7 sm:p-8">
-        <SectionLabel light>Market radar</SectionLabel>
-        <div className="mt-2 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-          <h3 className="text-2xl font-semibold">What is happening around them</h3>
-          <p className="text-xs text-slate-500">Current web research · cited sources</p>
+    <section>
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <Eyebrow>Market radar</Eyebrow>
+          <h3 className="mt-3 font-serif text-3xl">Signals and competitors</h3>
         </div>
-        {error ? (
-          <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
-            {error}
-          </p>
-        ) : null}
+        {error ? <Warning>{error}</Warning> : null}
       </div>
-
-      <div className="grid lg:grid-cols-[1.25fr_0.75fr]">
-        <div className="border-b border-white/10 p-7 sm:p-8 lg:border-b-0 lg:border-r">
-          <p className="text-sm font-semibold text-slate-200">Recent signals</p>
-          <div className="mt-5 space-y-3">
-            {signals.length ? (
-              signals.map((signal) => (
-                <a
-                  key={`${signal.title}-${signal.url}`}
-                  href={signal.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-2xl border border-white/10 bg-[#0b1728]/70 p-5 transition hover:border-cyan-300/30"
-                >
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-[0.12em] text-cyan-300">
-                    {signal.type ? <span>{signal.type}</span> : null}
-                    {signal.date ? (
-                      <>
-                        <span className="text-slate-600">·</span>
-                        <span>{formatSignalDate(signal.date)}</span>
-                      </>
-                    ) : null}
-                  </div>
-                  <h4 className="mt-2 font-semibold leading-6 text-white">
-                    {signal.title}
-                  </h4>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    {signal.summary}
-                  </p>
-                  <p className="mt-3 text-xs text-slate-500">
-                    {signal.source} ↗
-                  </p>
-                </a>
-              ))
-            ) : (
-              <p className="text-sm text-slate-500">
-                No cited recent signals were found.
-              </p>
-            )}
-          </div>
+      <div className="mt-8 grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="divide-y divide-[#d9d4c8] border-y border-[#d9d4c8]">
+          {market.signals.length ? (
+            market.signals.map((signal) => (
+              <a
+                key={`${signal.title}-${signal.url}`}
+                href={signal.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block py-5 hover:bg-white/50"
+              >
+                <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+                  {[signal.type, signal.date ? formatSignalDate(signal.date) : null, signal.source]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                <h4 className="mt-2 font-medium leading-6">{signal.title}</h4>
+                <p className="mt-2 text-sm leading-6 text-[#3f3b34]">
+                  {signal.summary}
+                </p>
+              </a>
+            ))
+          ) : (
+            <p className="py-5 text-sm text-[#6b665c]">No cited signals found.</p>
+          )}
         </div>
-
-        <div className="p-7 sm:p-8">
-          <p className="text-sm font-semibold text-slate-200">Competitive set</p>
-          <div className="mt-5 space-y-3">
-            {competitors.length ? (
-              competitors.map((competitor, index) => (
-                <a
-                  key={`${competitor.name}-${competitor.url}`}
-                  href={competitor.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex gap-4 rounded-2xl border border-white/10 bg-white/[0.035] p-4 transition hover:border-cyan-300/30"
-                >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/10 text-xs font-semibold text-cyan-300">
-                    {String(index + 1).padStart(2, "0")}
+        <div className="divide-y divide-[#d9d4c8] border-y border-[#d9d4c8]">
+          {market.competitors.length ? (
+            market.competitors.map((competitor, index) => (
+              <a
+                key={`${competitor.name}-${competitor.url}`}
+                href={competitor.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex gap-4 py-5 hover:bg-white/50"
+              >
+                <span className="font-mono text-xs text-[#6b665c]">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span>
+                  <span className="block font-medium">{competitor.name}</span>
+                  <span className="mt-1 block text-sm leading-6 text-[#3f3b34]">
+                    {competitor.reason}
                   </span>
-                  <div>
-                    <h4 className="font-semibold text-white">
-                      {competitor.name}
-                    </h4>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">
-                      {competitor.reason}
-                    </p>
-                  </div>
-                </a>
-              ))
-            ) : (
-              <p className="text-sm text-slate-500">
-                No cited competitors were returned.
-              </p>
-            )}
-          </div>
+                </span>
+              </a>
+            ))
+          ) : (
+            <p className="py-5 text-sm text-[#6b665c]">No competitors returned.</p>
+          )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -493,107 +391,77 @@ function PeopleSection({
   people,
   error,
 }: {
-  people?: RelevantPerson[];
+  people: RelevantPerson[];
   error: string | null;
 }) {
-  const contacts = people ?? [];
-
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-7 sm:p-8">
-      <SectionLabel light>People radar</SectionLabel>
-      <div className="mt-2 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-        <h3 className="text-2xl font-semibold">Who to reach out to and why</h3>
-        <p className="text-xs text-slate-500">
-          Top candidates only · manual review before outreach
-        </p>
+    <section>
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <Eyebrow>People radar</Eyebrow>
+          <h3 className="mt-3 font-serif text-3xl">Who to reach and why</h3>
+        </div>
+        {error ? <Warning>{error}</Warning> : null}
       </div>
-      {error ? (
-        <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="mt-6 grid gap-4">
-        {contacts.length ? (
-          contacts.map((person) => (
-            <div
+      <div className="mt-8 space-y-6">
+        {people.length ? (
+          people.map((person) => (
+            <article
               key={`${person.name}-${person.company}-${person.linkedin ?? ""}`}
-              className="rounded-2xl border border-white/10 bg-[#0b1728]/80 p-5"
+              className="border border-[#d9d4c8] bg-white p-6"
             >
-              <div className="flex flex-col justify-between gap-4 lg:flex-row">
+              <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-lg font-semibold">{person.name}</h4>
-                    {person.enriched ? (
-                      <span className="rounded-full bg-emerald-300/15 px-2.5 py-1 text-[11px] font-medium text-emerald-200">
-                        Enriched
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-slate-300">
-                        Candidate
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-sm text-slate-300">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+                    {person.enriched ? "Enriched" : "Candidate"}
+                  </p>
+                  <h4 className="mt-2 font-serif text-3xl">{person.name}</h4>
+                  <p className="mt-2 text-sm">
                     {person.title} · {person.company}
                   </p>
                   {person.location ? (
-                    <p className="mt-1 text-xs text-slate-500">{person.location}</p>
+                    <p className="mt-1 text-xs text-[#6b665c]">{person.location}</p>
                   ) : null}
                 </div>
-
-                <div className="min-w-56 text-sm">
-                  {person.work_emails.length ? (
-                    person.work_emails.map((email) => (
+                <div className="border-t border-[#d9d4c8] pt-4 text-sm lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+                    Contact
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {person.work_emails.length ? (
+                      person.work_emails.map((email) => (
+                        <a key={email} href={`mailto:${email}`} className="block underline">
+                          {email}
+                        </a>
+                      ))
+                    ) : (
+                      <p className="text-[#6b665c]">No work email returned</p>
+                    )}
+                    {person.linkedin ? (
                       <a
-                        key={email}
-                        href={`mailto:${email}`}
-                        className="block text-cyan-300 hover:text-cyan-200"
+                        href={person.linkedin}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block underline"
                       >
-                        {email}
+                        LinkedIn profile
                       </a>
-                    ))
-                  ) : (
-                    <p className="text-slate-500">No work email returned</p>
-                  )}
-                  {person.linkedin ? (
-                    <a
-                      href={person.linkedin}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 block text-slate-300 hover:text-white"
-                    >
-                      LinkedIn profile ↗
-                    </a>
-                  ) : null}
+                    ) : null}
+                  </div>
                 </div>
               </div>
-
-              <div className="mt-5 grid gap-3 lg:grid-cols-3">
-                <ReasonBlock title="Why them" text={person.why_this_person} />
-                <ReasonBlock title="Why now" text={person.why_now} />
-                <ReasonBlock title="Suggested angle" text={person.outreach_angle} />
+              <div className="mt-6 grid gap-px bg-[#d9d4c8] lg:grid-cols-3">
+                <Reason title="Why them" text={person.why_this_person} />
+                <Reason title="Why now" text={person.why_now} />
+                <Reason title="Angle" text={person.outreach_angle} />
               </div>
-            </div>
+            </article>
           ))
         ) : (
-          <p className="text-sm text-slate-500">
-            No people candidates are available yet.
-          </p>
+          <p className="text-sm text-[#6b665c]">No people candidates yet.</p>
         )}
       </div>
-    </div>
-  );
-}
-
-function ReasonBlock({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">
-        {title}
-      </p>
-      <p className="mt-2 text-xs leading-5 text-slate-300">{text}</p>
-    </div>
+    </section>
   );
 }
 
@@ -603,53 +471,159 @@ function GtmMap({
   people,
 }: {
   company: CompanyBrief;
-  market?: MarketIntelligence;
-  people?: RelevantPerson[];
+  market: MarketIntelligence;
+  people: RelevantPerson[];
 }) {
-  const signals = market?.signals.slice(0, 3) ?? [];
-  const competitors = market?.competitors.slice(0, 3) ?? [];
-  const contacts = people?.slice(0, 3) ?? [];
+  const contacts = people.slice(0, 3);
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-7 sm:p-8">
-      <SectionLabel light>GTM map</SectionLabel>
-      <h3 className="mt-2 text-2xl font-semibold">From company to action</h3>
-      <div className="mt-7 grid gap-5 lg:grid-cols-[1fr_1.2fr]">
-        <div className="grid place-items-center rounded-3xl border border-cyan-300/30 bg-cyan-300/10 p-8 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+    <section className="blueprint border border-[#d9d4c8] p-6">
+      <Eyebrow>GTM map</Eyebrow>
+      <h3 className="mt-3 font-serif text-3xl">Company → market → action</h3>
+      <div className="mt-8 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="border border-[#111] bg-[#111] p-6 text-white">
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/60">
             Company
           </p>
-          <p className="mt-3 text-3xl font-semibold">{company.company_name}</p>
-          <p className="mt-3 max-w-sm text-sm leading-6 text-slate-300">
-            {company.description ?? company.tagline ?? "Company profile generated."}
+          <p className="mt-4 font-serif text-3xl">{company.company_name}</p>
+          <p className="mt-4 text-sm leading-6 text-white/70">
+            {company.tagline ?? company.description ?? "Company profile generated."}
           </p>
         </div>
-
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-px bg-[#d9d4c8] sm:grid-cols-3">
           <MapColumn
             title="Market"
             items={[
-              ...signals.map((signal) => signal.title),
-              ...competitors.map((competitor) => competitor.name),
-            ].slice(0, 5)}
-            empty="No market context yet"
+              ...market.signals.slice(0, 2).map((item) => item.title),
+              ...market.competitors.slice(0, 2).map((item) => item.name),
+            ].slice(0, 4)}
+            empty="No market context"
           />
           <MapColumn
             title="People"
-            items={contacts.map((person) => `${person.name} · ${person.title}`)}
-            empty="No contacts yet"
+            items={contacts.map((person) => person.name)}
+            empty="No people yet"
           />
           <MapColumn
             title="Action"
             items={[
               contacts[0] ? `Contact ${contacts[0].name}` : null,
-              signals[0] ? `Reference: ${signals[0].type ?? "signal"}` : null,
-              competitors[0] ? `Monitor ${competitors[0].name}` : null,
+              market.signals[0]
+                ? `Reference ${market.signals[0].type ?? "signal"}`
+                : null,
+              market.competitors[0]
+                ? `Monitor ${market.competitors[0].name}`
+                : null,
             ].filter((item): item is string => Boolean(item))}
             empty="No action yet"
           />
         </div>
       </div>
+    </section>
+  );
+}
+
+function AuditFooter({ result }: { result: AnalyzeResponse }) {
+  return (
+    <div className="flex flex-col justify-between gap-4 border-t border-[#d9d4c8] pt-6 text-sm text-[#6b665c] sm:flex-row sm:items-start">
+      <p>
+        {result.cached
+          ? "Served from cache. No new Vaaya charge."
+          : `Vaaya charged ${result.charged_cents ?? 0} cents for this run.`}
+        {typeof result.balance_remaining_cents === "number"
+          ? ` ${result.balance_remaining_cents} cents remaining.`
+          : ""}
+      </p>
+      <details>
+        <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.16em] text-[#111]">
+          Audit details
+        </summary>
+        <pre className="mt-3 max-h-72 max-w-2xl overflow-auto whitespace-pre-wrap bg-[#111] p-4 font-mono text-[11px] leading-5 text-white">
+          {JSON.stringify(
+            {
+              provider: result.provider,
+              market_provider: result.market_provider,
+              people_provider: result.people_provider,
+              requested_url: result.requested_url,
+              evidence: result.evidence,
+              details: result.details,
+            },
+            null,
+            2,
+          )}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function Eyebrow({ children }: { children: ReactNode }) {
+  return (
+    <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#6b665c]">
+      {children}
+    </p>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="bg-[#f7f4ee] p-4">
+      <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+        {label}
+      </p>
+      <p className="mt-3 font-serif text-3xl">{value}</p>
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="bg-[#f7f4ee] p-5">
+      <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+        {label}
+      </p>
+      <p className="mt-3 text-sm font-medium">{value ?? "Not evidenced"}</p>
+    </div>
+  );
+}
+
+function TagList({
+  title,
+  items,
+  empty,
+}: {
+  title: string;
+  items: string[];
+  empty: string;
+}) {
+  return (
+    <div>
+      <Eyebrow>{title}</Eyebrow>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {items.length ? (
+          items.map((item) => (
+            <span
+              key={item}
+              className="border border-[#d9d4c8] bg-white px-3 py-1.5 text-xs"
+            >
+              {item}
+            </span>
+          ))
+        ) : (
+          <p className="text-sm text-[#6b665c]">{empty}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Reason({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="bg-[#f7f4ee] p-4">
+      <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+        {title}
+      </p>
+      <p className="mt-2 text-xs leading-5 text-[#3f3b34]">{text}</p>
     </div>
   );
 }
@@ -664,20 +638,30 @@ function MapColumn({
   empty: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#0b1728]/70 p-4">
-      <p className="text-sm font-semibold text-cyan-300">{title}</p>
+    <div className="bg-white p-4">
+      <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+        {title}
+      </p>
       <div className="mt-4 space-y-2">
         {items.length ? (
           items.map((item) => (
-            <div key={item} className="rounded-xl bg-white/[0.06] p-3 text-xs leading-5">
+            <p key={item} className="text-xs leading-5">
               {item}
-            </div>
+            </p>
           ))
         ) : (
-          <p className="text-xs text-slate-500">{empty}</p>
+          <p className="text-xs text-[#6b665c]">{empty}</p>
         )}
       </div>
     </div>
+  );
+}
+
+function Warning({ children }: { children: ReactNode }) {
+  return (
+    <p className="border border-[#ead3a6] bg-[#f8f1df] px-3 py-1.5 text-xs text-[#7a5a12]">
+      {children}
+    </p>
   );
 }
 
@@ -691,76 +675,4 @@ function formatSignalDate(value: string) {
         day: "numeric",
         year: "numeric",
       }).format(date);
-}
-
-function SectionLabel({
-  children,
-  light = false,
-}: {
-  children: React.ReactNode;
-  light?: boolean;
-}) {
-  return (
-    <p
-      className={`text-xs font-semibold uppercase tracking-[0.2em] ${
-        light ? "text-cyan-300" : "text-cyan-700"
-      }`}
-    >
-      {children}
-    </p>
-  );
-}
-
-function Tag({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-full border border-cyan-700/10 bg-white/70 px-3 py-1 text-xs font-medium text-cyan-900">
-      {children}
-    </span>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="rounded-xl bg-slate-100 p-4">
-      <dt className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-        {label}
-      </dt>
-      <dd className="mt-2 text-sm font-semibold text-slate-800">
-        {value ?? "Not evidenced"}
-      </dd>
-    </div>
-  );
-}
-
-function ListCard({
-  eyebrow,
-  title,
-  items,
-  empty,
-}: {
-  eyebrow: string;
-  title: string;
-  items: string[];
-  empty: string;
-}) {
-  return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-7 sm:p-8">
-      <SectionLabel light>{eyebrow}</SectionLabel>
-      <h3 className="mt-2 text-2xl font-semibold">{title}</h3>
-      <div className="mt-5 flex flex-wrap gap-2">
-        {items.length ? (
-          items.map((item) => (
-            <span
-              key={item}
-              className="rounded-xl border border-white/10 bg-white/[0.06] px-3.5 py-2 text-sm text-slate-200"
-            >
-              {item}
-            </span>
-          ))
-        ) : (
-          <p className="text-sm text-slate-400">{empty}</p>
-        )}
-      </div>
-    </div>
-  );
 }
