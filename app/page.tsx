@@ -2,7 +2,11 @@
 
 import { FormEvent, useState } from "react";
 
-import type { CompanyBrief, MarketIntelligence } from "@/lib/company";
+import type {
+  CompanyBrief,
+  MarketIntelligence,
+  RelevantPerson,
+} from "@/lib/company";
 
 type AnalyzeResponse = {
   ok: boolean;
@@ -11,6 +15,8 @@ type AnalyzeResponse = {
   company?: CompanyBrief;
   market?: MarketIntelligence;
   market_error?: string | null;
+  people?: RelevantPerson[];
+  people_error?: string | null;
   evidence?: unknown;
   charged_cents?: number;
   balance_remaining_cents?: number | null;
@@ -22,6 +28,10 @@ type AnalyzeResponse = {
   market_provider?: {
     service: string;
     action: string;
+  };
+  people_provider?: {
+    discovery: string;
+    enrichment: string;
   };
   details?: unknown;
 };
@@ -154,11 +164,12 @@ function LoadingStory() {
           </p>
         </div>
       </div>
-      <div className="mt-7 grid gap-3 sm:grid-cols-4">
+      <div className="mt-7 grid gap-3 sm:grid-cols-5">
         <LoadingStep number="01" label="Reading website" active />
         <LoadingStep number="02" label="Extracting company profile" />
         <LoadingStep number="03" label="Finding market signals" />
         <LoadingStep number="04" label="Mapping competitors" />
+        <LoadingStep number="05" label="Finding people" />
       </div>
     </section>
   );
@@ -191,7 +202,7 @@ function EmptyState() {
   const outcomes = [
     ["Company profile", "What they do, sell, and how they position."],
     ["Market signals", "Recent launches, funding, hiring, and news."],
-    ["Competitors", "Who else competes for the same customer."],
+    ["People to contact", "Relevant leaders, contact details, and angles."],
   ];
 
   return (
@@ -290,6 +301,10 @@ function CompanyReport({
         error={result.market_error ?? null}
       />
 
+      <PeopleSection people={result.people} error={result.people_error ?? null} />
+
+      <GtmMap company={company} market={result.market} people={result.people} />
+
       <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
         <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.08] p-7 sm:p-8">
           <SectionLabel light>GTM intelligence</SectionLabel>
@@ -356,6 +371,7 @@ function CompanyReport({
               {
                 provider: result.provider,
                 market_provider: result.market_provider,
+                people_provider: result.people_provider,
                 requested_url: result.requested_url,
                 evidence: result.evidence,
                 details: result.details,
@@ -468,6 +484,198 @@ function MarketSection({
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PeopleSection({
+  people,
+  error,
+}: {
+  people?: RelevantPerson[];
+  error: string | null;
+}) {
+  const contacts = people ?? [];
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-7 sm:p-8">
+      <SectionLabel light>People radar</SectionLabel>
+      <div className="mt-2 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+        <h3 className="text-2xl font-semibold">Who to reach out to and why</h3>
+        <p className="text-xs text-slate-500">
+          Top candidates only · manual review before outreach
+        </p>
+      </div>
+      {error ? (
+        <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="mt-6 grid gap-4">
+        {contacts.length ? (
+          contacts.map((person) => (
+            <div
+              key={`${person.name}-${person.company}-${person.linkedin ?? ""}`}
+              className="rounded-2xl border border-white/10 bg-[#0b1728]/80 p-5"
+            >
+              <div className="flex flex-col justify-between gap-4 lg:flex-row">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-lg font-semibold">{person.name}</h4>
+                    {person.enriched ? (
+                      <span className="rounded-full bg-emerald-300/15 px-2.5 py-1 text-[11px] font-medium text-emerald-200">
+                        Enriched
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-slate-300">
+                        Candidate
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-sm text-slate-300">
+                    {person.title} · {person.company}
+                  </p>
+                  {person.location ? (
+                    <p className="mt-1 text-xs text-slate-500">{person.location}</p>
+                  ) : null}
+                </div>
+
+                <div className="min-w-56 text-sm">
+                  {person.work_emails.length ? (
+                    person.work_emails.map((email) => (
+                      <a
+                        key={email}
+                        href={`mailto:${email}`}
+                        className="block text-cyan-300 hover:text-cyan-200"
+                      >
+                        {email}
+                      </a>
+                    ))
+                  ) : (
+                    <p className="text-slate-500">No work email returned</p>
+                  )}
+                  {person.linkedin ? (
+                    <a
+                      href={person.linkedin}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 block text-slate-300 hover:text-white"
+                    >
+                      LinkedIn profile ↗
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 lg:grid-cols-3">
+                <ReasonBlock title="Why them" text={person.why_this_person} />
+                <ReasonBlock title="Why now" text={person.why_now} />
+                <ReasonBlock title="Suggested angle" text={person.outreach_angle} />
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-slate-500">
+            No people candidates are available yet.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReasonBlock({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">
+        {title}
+      </p>
+      <p className="mt-2 text-xs leading-5 text-slate-300">{text}</p>
+    </div>
+  );
+}
+
+function GtmMap({
+  company,
+  market,
+  people,
+}: {
+  company: CompanyBrief;
+  market?: MarketIntelligence;
+  people?: RelevantPerson[];
+}) {
+  const signals = market?.signals.slice(0, 3) ?? [];
+  const competitors = market?.competitors.slice(0, 3) ?? [];
+  const contacts = people?.slice(0, 3) ?? [];
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-7 sm:p-8">
+      <SectionLabel light>GTM map</SectionLabel>
+      <h3 className="mt-2 text-2xl font-semibold">From company to action</h3>
+      <div className="mt-7 grid gap-5 lg:grid-cols-[1fr_1.2fr]">
+        <div className="grid place-items-center rounded-3xl border border-cyan-300/30 bg-cyan-300/10 p-8 text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+            Company
+          </p>
+          <p className="mt-3 text-3xl font-semibold">{company.company_name}</p>
+          <p className="mt-3 max-w-sm text-sm leading-6 text-slate-300">
+            {company.description ?? company.tagline ?? "Company profile generated."}
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <MapColumn
+            title="Market"
+            items={[
+              ...signals.map((signal) => signal.title),
+              ...competitors.map((competitor) => competitor.name),
+            ].slice(0, 5)}
+            empty="No market context yet"
+          />
+          <MapColumn
+            title="People"
+            items={contacts.map((person) => `${person.name} · ${person.title}`)}
+            empty="No contacts yet"
+          />
+          <MapColumn
+            title="Action"
+            items={[
+              contacts[0] ? `Contact ${contacts[0].name}` : null,
+              signals[0] ? `Reference: ${signals[0].type ?? "signal"}` : null,
+              competitors[0] ? `Monitor ${competitors[0].name}` : null,
+            ].filter((item): item is string => Boolean(item))}
+            empty="No action yet"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MapColumn({
+  title,
+  items,
+  empty,
+}: {
+  title: string;
+  items: string[];
+  empty: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#0b1728]/70 p-4">
+      <p className="text-sm font-semibold text-cyan-300">{title}</p>
+      <div className="mt-4 space-y-2">
+        {items.length ? (
+          items.map((item) => (
+            <div key={item} className="rounded-xl bg-white/[0.06] p-3 text-xs leading-5">
+              {item}
+            </div>
+          ))
+        ) : (
+          <p className="text-xs text-slate-500">{empty}</p>
+        )}
       </div>
     </div>
   );

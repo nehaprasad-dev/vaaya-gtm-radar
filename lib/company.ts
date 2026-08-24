@@ -36,6 +36,21 @@ export type MarketIntelligence = {
   competitors: Competitor[];
 };
 
+export type RelevantPerson = {
+  name: string;
+  title: string;
+  company: string;
+  location: string | null;
+  linkedin: string | null;
+  work_emails: string[];
+  phones: string[];
+  enriched: boolean;
+  why_this_person: string;
+  why_now: string;
+  outreach_angle: string;
+  sources: string[];
+};
+
 export const companyBriefSchema = {
   type: "object",
   properties: {
@@ -327,6 +342,259 @@ export function parseMarketResults(value: unknown): MarketIntelligence {
     signals,
     competitors,
   };
+}
+
+function normalizeLinkedIn(value: unknown) {
+  const url = validUrl(value);
+
+  if (!url || !new URL(url).hostname.includes("linkedin.com")) {
+    return null;
+  }
+
+  return url;
+}
+
+function emailArray(value: unknown) {
+  if (typeof value === "string") {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+      ? [value.trim()]
+      : [];
+  }
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item))
+    .slice(0, 3);
+}
+
+function phoneArray(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim() ? [value.trim()] : [];
+  }
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+}
+
+function scorePersonTitle(title: string) {
+  const normalized = title.toLowerCase();
+
+  if (/\b(founder|co-founder|ceo)\b/.test(normalized)) {
+    return 5;
+  }
+  if (/\b(growth|revenue|sales|gtm|go-to-market|commercial)\b/.test(normalized)) {
+    return 4;
+  }
+  if (/\b(marketing|demand|business development|partnership)\b/.test(normalized)) {
+    return 3;
+  }
+  if (/\b(product|operations|strategy)\b/.test(normalized)) {
+    return 2;
+  }
+
+  return 1;
+}
+
+function makePersonRationale(
+  person: Pick<RelevantPerson, "title" | "company">,
+  company: CompanyBrief,
+  market: MarketIntelligence,
+) {
+  const title = person.title.toLowerCase();
+  const signal = market.signals[0]?.title;
+  const competitor = market.competitors[0]?.name;
+  const ownsGrowth =
+    /\b(growth|sales|revenue|gtm|go-to-market|business development)\b/.test(title);
+  const isFounder = /\b(founder|co-founder|ceo)\b/.test(title);
+
+  return {
+    why_this_person: isFounder
+      ? "Founder-level role can sponsor tooling that improves market research and outbound decisions."
+      : ownsGrowth
+        ? "Owns growth, revenue, or GTM work where better account research directly affects pipeline quality."
+        : `Role appears relevant to ${company.company_name}'s GTM or strategic planning.`,
+    why_now: signal
+      ? `Recent signal to reference: ${signal}.`
+      : competitor
+        ? `Competitive pressure is visible from similar companies such as ${competitor}.`
+        : `The company operates in ${company.industry ?? "a competitive market"} where timely account intelligence matters.`,
+    outreach_angle: ownsGrowth
+      ? "Show how Vaaya can automate company research, signals, and contact prep before the team adds more manual outbound work."
+      : "Lead with a concise GTM radar example for their market and ask if manual research is slowing prioritization.",
+  };
+}
+
+function parsePersonCandidate(value: unknown): Omit<
+  RelevantPerson,
+  "why_this_person" | "why_now" | "outreach_angle"
+> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const name = nullableString(value.name ?? value.full_name);
+  const title = nullableString(value.title ?? value.headline ?? value.role);
+  const company = nullableString(value.company ?? value.company_name);
+
+  if (!name || !title || !company) {
+    return null;
+  }
+
+  return {
+    name,
+    title,
+    company,
+    location: nullableString(value.location),
+    linkedin: normalizeLinkedIn(value.linkedin ?? value.linkedin_url ?? value.url),
+    work_emails: emailArray(value.work_emails ?? value.emails),
+    phones: phoneArray(value.phones),
+    enriched: value.enriched === true,
+    sources: stringArray(value.sources).slice(0, 4),
+  };
+}
+
+export function parsePeopleCandidates(
+  value: unknown,
+  company: CompanyBrief,
+  market: MarketIntelligence,
+): RelevantPerson[] {
+  const people: RelevantPerson[] = [];
+  const seen = new Set<string>();
+
+  function visit(node: unknown, depth = 0) {
+    if (depth > 5 || people.length >= 5) {
+      return;
+    }
+
+    if (Array.isArray(node)) {
+      node.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+
+    const candidate = parsePersonCandidate(node);
+
+    if (candidate) {
+      const key = `${candidate.linkedin ?? candidate.name}-${candidate.company}`;
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        people.push({
+          ...candidate,
+          ...makePersonRationale(candidate, company, market),
+        });
+      }
+
+      return;
+    }
+
+    if (!isRecord(node)) {
+      return;
+    }
+
+    for (const key of ["rows", "results", "data", "items", "people"]) {
+      if (key in node) {
+        visit(node[key], depth + 1);
+      }
+    }
+  }
+
+  visit(value);
+
+  return people
+    .sort((a, b) => scorePersonTitle(b.title) - scorePersonTitle(a.title))
+    .slice(0, 5);
+}
+
+export function mergeEnrichedPeople(
+  candidates: RelevantPerson[],
+  value: unknown,
+): RelevantPerson[] {
+  const enrichments: Array<{
+    key: string;
+    emails: string[];
+    phones: string[];
+    sources: string[];
+  }> = [];
+
+  function visit(node: unknown, depth = 0) {
+    if (depth > 6) {
+      return;
+    }
+
+    if (Array.isArray(node)) {
+      node.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+
+    if (!isRecord(node)) {
+      return;
+    }
+
+    const data = isRecord(node.data) ? node.data : node;
+    const contact = isRecord(data.profile) ? data.profile : data;
+    const key = nullableString(node.input) ??
+      normalizeLinkedIn(contact.linkedin ?? contact.linkedin_url) ??
+      nullableString(contact.name);
+    const emails = emailArray(
+      contact.work_emails ??
+        contact.work_email ??
+        contact.email ??
+        contact.emails ??
+        contact.personal_email,
+    );
+    const phones = phoneArray(contact.phones ?? contact.phone);
+
+    if (key && (emails.length || phones.length)) {
+      enrichments.push({
+        key,
+        emails,
+        phones,
+        sources: stringArray(node.sources ?? data.sources).slice(0, 4),
+      });
+    }
+
+    for (const childKey of ["results", "data", "items", "output"]) {
+      if (childKey in node && node[childKey] !== data) {
+        visit(node[childKey], depth + 1);
+      }
+    }
+  }
+
+  visit(value);
+
+  return candidates.map((candidate) => {
+    const match = enrichments.find((enrichment) => {
+      const key = enrichment.key.toLowerCase();
+      return (
+        (candidate.linkedin && key.includes(candidate.linkedin.toLowerCase())) ||
+        key.includes(candidate.name.toLowerCase())
+      );
+    });
+
+    if (!match) {
+      return candidate;
+    }
+
+    return {
+      ...candidate,
+      work_emails: match.emails.length ? match.emails : candidate.work_emails,
+      phones: match.phones.length ? match.phones : candidate.phones,
+      enriched: true,
+      sources: Array.from(new Set([...candidate.sources, ...match.sources])),
+    };
+  });
 }
 
 export function isRecordValue(

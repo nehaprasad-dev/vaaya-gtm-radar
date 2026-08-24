@@ -5,8 +5,11 @@ import {
   isRecordValue,
   parseCompanyBrief,
   parseMarketResults,
+  mergeEnrichedPeople,
+  parsePeopleCandidates,
   type CompanyBrief,
   type MarketIntelligence,
+  type RelevantPerson,
 } from "@/lib/company";
 import { VaayaApiError, vaayaRun, type VaayaRunResponse } from "@/lib/vaaya";
 
@@ -17,9 +20,13 @@ const MAX_CRW_EXTRACTION_COST_CENTS = 10;
 const MAX_FIRECRAWL_EXTRACTION_COST_CENTS = 8;
 const MAX_MARKET_RESEARCH_COST_CENTS = 10;
 const MAX_COMPETITOR_RESEARCH_COST_CENTS = 6;
+const MAX_PEOPLE_DISCOVERY_COST_CENTS = 2;
+const MAX_PEOPLE_ENRICHMENT_COST_CENTS = 60;
+const MAX_CONTACT_FALLBACK_COST_CENTS = 10;
 const POLL_INTERVAL_MS = 2500;
 const MAX_POLL_ATTEMPTS = 20;
 const MARKET_MAX_POLL_ATTEMPTS = 6;
+const PEOPLE_MAX_POLL_ATTEMPTS = 24;
 const PARTIAL_CACHE_TTL_MS = 15 * 60 * 1000;
 
 type AnalyzeRequest = {
@@ -37,6 +44,8 @@ type AnalyzeSuccessResponse = {
   company: CompanyBrief;
   market: MarketIntelligence;
   market_error: string | null;
+  people: RelevantPerson[];
+  people_error: string | null;
   evidence: unknown;
   charged_cents: number;
   balance_remaining_cents: number | null;
@@ -48,6 +57,10 @@ type AnalyzeSuccessResponse = {
   market_provider: {
     service: "vaaya";
     action: "supersearch";
+  };
+  people_provider: {
+    discovery: "vaaya/onefind";
+    enrichment: "vaaya/onefind-deep";
   };
 };
 
@@ -465,6 +478,171 @@ async function runMarketResearch(
   };
 }
 
+async function runPeopleEnrichment(
+  candidates: RelevantPerson[],
+): Promise<{
+  people: RelevantPerson[];
+  chargedCents: number;
+  balanceRemainingCents: number | null;
+}> {
+  const rows = candidates.slice(0, 3).map((candidate) =>
+    candidate.linkedin ??
+    `${candidate.name} ${candidate.title} ${candidate.company}`,
+  );
+
+  if (!rows.length) {
+    return {
+      people: candidates,
+      chargedCents: 0,
+      balanceRemainingCents: null,
+    };
+  }
+
+  let response = await vaayaRun("vaaya", "onefind-deep", {
+    rows,
+    budgetCents: MAX_PEOPLE_ENRICHMENT_COST_CENTS,
+  }, {
+    maxCostCents: MAX_PEOPLE_ENRICHMENT_COST_CENTS,
+  });
+  let chargedCents = response.charged_cents ?? 0;
+  let balanceRemainingCents = response.balance_remaining_cents ?? null;
+  const jobId = findJobId(response.data);
+
+  if (jobId) {
+    for (let attempt = 0; attempt < PEOPLE_MAX_POLL_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+      response = await vaayaRun("vaaya", "result", { job_id: jobId });
+      chargedCents += response.charged_cents ?? 0;
+      balanceRemainingCents =
+        response.balance_remaining_cents ?? balanceRemainingCents;
+
+      const status = findJobStatus(response.data);
+
+      if (status === "failed" || status === "cancelled") {
+        throw new VaayaApiError("People enrichment job failed.", 502, response);
+      }
+
+      if (
+        status === "completed" ||
+        status === "succeeded" ||
+        mergeEnrichedPeople(candidates, response.data).some(
+          (person) => person.enriched,
+        )
+      ) {
+        break;
+      }
+    }
+  }
+
+  let people = mergeEnrichedPeople(candidates, response.data);
+  const directFallbackTargets = people
+    .filter(
+      (person) =>
+        person.linkedin &&
+        !person.work_emails.length &&
+        !person.phones.length,
+    )
+    .slice(0, 2);
+
+  for (const target of directFallbackTargets) {
+    if (!target.linkedin) {
+      continue;
+    }
+
+    try {
+      const contactResponse = await vaayaRun(
+        "contactout",
+        "linkedin-contacts",
+        {
+          profile: target.linkedin,
+          include_phone: false,
+        },
+        {
+          maxCostCents: MAX_CONTACT_FALLBACK_COST_CENTS,
+        },
+      );
+      chargedCents += contactResponse.charged_cents ?? 0;
+      balanceRemainingCents =
+        contactResponse.balance_remaining_cents ?? balanceRemainingCents;
+      people = mergeEnrichedPeople(people, {
+        results: [
+          {
+            input: target.linkedin,
+            data: contactResponse.data,
+            sources: ["contactout"],
+          },
+        ],
+      });
+    } catch (error) {
+      console.warn(
+        "Contact fallback failed",
+        error instanceof VaayaApiError
+          ? JSON.stringify({ status: error.status, response: error.response }, null, 2)
+          : error,
+      );
+    }
+  }
+
+  return {
+    people,
+    chargedCents,
+    balanceRemainingCents,
+  };
+}
+
+async function runPeopleResearch(
+  company: CompanyBrief,
+  market: MarketIntelligence,
+) {
+  const query = [
+    `Find founders, heads of growth, VP sales, revenue, and GTM leaders`,
+    `for ${company.company_name} or companies like it in ${company.industry ?? "its market"}.`,
+    "Return LinkedIn profiles only when available.",
+  ].join(" ");
+  const discovery = await vaayaRun("vaaya", "onefind", {
+    query,
+    limit: 5,
+  }, {
+    maxCostCents: MAX_PEOPLE_DISCOVERY_COST_CENTS,
+  });
+  const candidates = parsePeopleCandidates(discovery.data, company, market);
+
+  if (!candidates.length) {
+    return {
+      people: [],
+      chargedCents: discovery.charged_cents ?? 0,
+      balanceRemainingCents: discovery.balance_remaining_cents ?? null,
+    };
+  }
+
+  try {
+    const enrichment = await runPeopleEnrichment(candidates);
+
+    return {
+      people: enrichment.people,
+      chargedCents:
+        (discovery.charged_cents ?? 0) + enrichment.chargedCents,
+      balanceRemainingCents:
+        enrichment.balanceRemainingCents ??
+        discovery.balance_remaining_cents ??
+        null,
+    };
+  } catch (error) {
+    console.warn(
+      "Vaaya people enrichment failed; returning discovered people only",
+      error instanceof VaayaApiError
+        ? JSON.stringify({ status: error.status, response: error.response }, null, 2)
+        : error,
+    );
+
+    return {
+      people: candidates,
+      chargedCents: discovery.charged_cents ?? 0,
+      balanceRemainingCents: discovery.balance_remaining_cents ?? null,
+    };
+  }
+}
+
 export async function POST(request: Request) {
   let body: AnalyzeRequest;
 
@@ -511,6 +689,9 @@ export async function POST(request: Request) {
     };
     let marketError: string | null = null;
     let marketChargedCents = 0;
+    let people: RelevantPerson[] = [];
+    let peopleError: string | null = null;
+    let peopleChargedCents = 0;
     let balanceRemainingCents = settled.balanceRemainingCents;
 
     try {
@@ -550,14 +731,44 @@ export async function POST(request: Request) {
       );
     }
 
+    try {
+      const peopleResearch = await runPeopleResearch(company, market);
+      people = peopleResearch.people;
+      peopleChargedCents = peopleResearch.chargedCents;
+      balanceRemainingCents =
+        peopleResearch.balanceRemainingCents ?? balanceRemainingCents;
+
+      if (!people.length) {
+        peopleError = "No relevant people were found for this company yet.";
+      }
+    } catch (peopleResearchError) {
+      peopleError = "People discovery is temporarily unavailable.";
+      console.error(
+        "Vaaya people research failed",
+        peopleResearchError instanceof VaayaApiError
+          ? JSON.stringify(
+              {
+                status: peopleResearchError.status,
+                response: peopleResearchError.response,
+              },
+              null,
+              2,
+            )
+          : peopleResearchError,
+      );
+    }
+
     const response: AnalyzeSuccessResponse = {
       ok: true,
       requested_url: companyUrl,
       company,
       market,
       market_error: marketError,
+      people,
+      people_error: peopleError,
       evidence: findEvidence(settled.response.data),
-      charged_cents: settled.chargedCents + marketChargedCents,
+      charged_cents:
+        settled.chargedCents + marketChargedCents + peopleChargedCents,
       balance_remaining_cents: balanceRemainingCents,
       cached: false,
       provider: {
@@ -568,11 +779,16 @@ export async function POST(request: Request) {
         service: "vaaya",
         action: "supersearch",
       },
+      people_provider: {
+        discovery: "vaaya/onefind",
+        enrichment: "vaaya/onefind-deep",
+      },
     };
 
     analysisCache.set(companyUrl, {
       expiresAt:
-        Date.now() + (marketError ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS),
+        Date.now() +
+        (marketError || peopleError ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS),
       response,
     });
 
