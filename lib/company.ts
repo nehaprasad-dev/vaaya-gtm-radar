@@ -3,6 +3,13 @@ export type CompanyLink = {
   url: string;
 };
 
+export type Department = {
+  name: string;
+  head: string | null;
+  head_title: string | null;
+  size: number | null;
+};
+
 export type CompanyBrief = {
   company_name: string;
   tagline: string | null;
@@ -12,6 +19,10 @@ export type CompanyBrief = {
   industry: string | null;
   business_model: string | null;
   headquarters: string | null;
+  location: string | null;
+  employee_count: number | null;
+  website: string;
+  departments: Department[];
   key_links: CompanyLink[];
   gtm_takeaways: string[];
 };
@@ -34,6 +45,13 @@ export type Competitor = {
 export type MarketIntelligence = {
   signals: MarketSignal[];
   competitors: Competitor[];
+  positioning: string | null;
+  recent_activity: string[];
+};
+
+export type VendorUsed = {
+  name: string;
+  used_for: string;
 };
 
 export type RelevantPerson = {
@@ -155,6 +173,8 @@ export function parseCompanyBrief(value: unknown): CompanyBrief | null {
     return null;
   }
 
+  const headquarters = nullableString(value.headquarters);
+
   return {
     company_name: companyName,
     tagline: nullableString(value.tagline),
@@ -163,10 +183,29 @@ export function parseCompanyBrief(value: unknown): CompanyBrief | null {
     target_customers: stringArray(value.target_customers),
     industry: nullableString(value.industry),
     business_model: nullableString(value.business_model),
-    headquarters: nullableString(value.headquarters),
+    headquarters,
+    location: nullableString(value.location) ?? headquarters,
+    employee_count: numberish(value.employee_count ?? value.headcount),
+    website: nullableString(value.website) ?? "",
+    departments: [],
     key_links: linksArray(value.key_links),
     gtm_takeaways: stringArray(value.gtm_takeaways),
   };
+}
+
+function numberish(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+
+  if (typeof value === "string") {
+    const digits = value.replace(/[^\d]/g, "");
+    if (digits) {
+      return Number(digits);
+    }
+  }
+
+  return null;
 }
 
 function validUrl(value: unknown) {
@@ -274,8 +313,14 @@ export function parseMarketResults(value: unknown): MarketIntelligence {
       kind.includes("hiring") ||
       kind.includes("partnership") ||
       kind.includes("regulatory") ||
-      ((kind === "doc" || kind === "link") &&
-        Boolean(node.published_at ?? node.published_date ?? node.publishedDate));
+      ((kind === "doc" || kind === "link" || !kind) &&
+        Boolean(
+          node.published_at ??
+            node.published_date ??
+            node.publishedDate ??
+            node.published ??
+            node.snippet,
+        ));
 
     const competitorDomain = url ? new URL(url).hostname.replace(/^www\./, "") : null;
 
@@ -313,7 +358,11 @@ export function parseMarketResults(value: unknown): MarketIntelligence {
         title,
         summary: summary ?? "Open the source for more details.",
         date: nullableString(
-          node.date ?? node.published_date ?? node.publishedDate,
+          node.date ??
+            node.published_at ??
+            node.published_date ??
+            node.publishedDate ??
+            node.published,
         ),
         type: signalType,
         source,
@@ -341,6 +390,8 @@ export function parseMarketResults(value: unknown): MarketIntelligence {
   return {
     signals,
     competitors,
+    positioning: null,
+    recent_activity: signals.map((signal) => signal.title).slice(0, 5),
   };
 }
 
@@ -595,6 +646,389 @@ export function mergeEnrichedPeople(
       sources: Array.from(new Set([...candidate.sources, ...match.sources])),
     };
   });
+}
+
+export function personBelongsToCompany(
+  person: RelevantPerson,
+  company: CompanyBrief,
+  companyUrl: string,
+) {
+  const domain = new URL(companyUrl).hostname.replace(/^www\./, "").toLowerCase();
+  const host = domain.split(".")[0];
+  const companyToken = company.company_name
+    .toLowerCase()
+    .replace(/\.(com|co|io|ai|dev|so)$/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+  const personToken = person.company
+    .toLowerCase()
+    .replace(/\.(com|co|io|ai|dev|so)$/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+  const emailDomains = person.work_emails.map((email) =>
+    email.split("@")[1]?.toLowerCase(),
+  );
+
+  if (emailDomains.some((item) => item === domain || item?.endsWith(`.${domain}`))) {
+    return true;
+  }
+
+  if (
+    emailDomains.some(
+      (item) => item && item !== domain && !item.includes(host),
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    personToken === companyToken ||
+    personToken === host ||
+    personToken === domain.replace(/\./g, "") ||
+    person.company.toLowerCase() === domain
+  );
+}
+
+const DEPARTMENT_TITLE_MAP: Array<[RegExp, string]> = [
+  [/\b(engineer|cto|technology|dev)\b/, "Engineering"],
+  [/\b(product|cpo)\b/, "Product"],
+  [/\b(sales|account executive|revenue|cro)\b/, "Sales"],
+  [/\b(growth|gtm|go-to-market)\b/, "Growth"],
+  [/\b(market)\b/, "Marketing"],
+  [/\b(people|talent|hr|human)\b/, "People"],
+  [/\b(financ|cfo)\b/, "Finance"],
+  [/\b(operat|coo)\b/, "Operations"],
+  [/\b(success|support|customer)\b/, "Customer"],
+  [/\b(design|designer|brand)\b/, "Design"],
+  [/\b(founder|ceo)\b/, "Leadership"],
+];
+
+function walkAktaFallback(value: unknown) {
+  const firmographic: Record<string, unknown> = {};
+  const executives: Record<string, unknown>[] = [];
+  const departments: Department[] = [];
+
+  function visit(node: unknown, depth = 0) {
+    if (depth > 8 || !node) {
+      return;
+    }
+
+    if (Array.isArray(node)) {
+      node.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+
+    if (!isRecord(node)) {
+      return;
+    }
+
+    if (node.headcount || node.employee_count || node.hq || node.industry) {
+      Object.assign(firmographic, node);
+    }
+
+    const title = nullableString(node.title ?? node.role ?? node.job_title);
+    const name = nullableString(node.name ?? node.full_name);
+    if (
+      name &&
+      title &&
+      (node.linkedin || /ceo|founder|head|vp|chief|director/i.test(title))
+    ) {
+      executives.push(node);
+    }
+
+    const deptName = nullableString(
+      node.department ?? (node.head ? node.name : null),
+    );
+    const head = nullableString(node.head ?? node.head_name ?? node.leader);
+    if (deptName && (head || typeof node.size === "number")) {
+      departments.push({
+        name: deptName,
+        head,
+        head_title: nullableString(node.head_title),
+        size: numberish(node.size ?? node.headcount),
+      });
+    }
+
+    for (const key of [
+      "sections",
+      "firmographic",
+      "management_profile",
+      "company_hierarchy",
+      "executives",
+      "departments",
+      "data",
+      "results",
+    ]) {
+      if (key in node) {
+        visit(node[key], depth + 1);
+      }
+    }
+  }
+
+  visit(value);
+
+  return { firmographic, executives, departments: departments.slice(0, 12) };
+}
+
+function unwrapAktaSections(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (isRecord(value.sections)) {
+    return value.sections;
+  }
+
+  if (isRecord(value.data) && isRecord(value.data.sections)) {
+    return value.data.sections;
+  }
+
+  return value;
+}
+
+export function parseAktaCompany(value: unknown) {
+  const sections = unwrapAktaSections(value);
+  const firmographic = isRecord(sections?.firmographic)
+    ? sections.firmographic
+    : {};
+  const management = isRecord(sections?.management_profile)
+    ? sections.management_profile
+    : {};
+  const hierarchy = isRecord(sections?.company_hierarchy)
+    ? sections.company_hierarchy
+    : {};
+
+  const executives = (
+    Array.isArray(management.executives) ? management.executives : []
+  ).filter(isRecord);
+
+  const walked = walkAktaFallback(value);
+  if (!executives.length) {
+    executives.push(...walked.executives);
+  }
+
+  const departments: Department[] = (
+    Array.isArray(hierarchy.departments) ? hierarchy.departments : []
+  )
+    .flatMap((item) => {
+      if (!isRecord(item)) {
+        return [];
+      }
+
+      const name = nullableString(item.name ?? item.department);
+      const head = nullableString(item.head ?? item.head_name ?? item.leader);
+
+      if (!name) {
+        return [];
+      }
+
+      const matchedExec = executives.find((executive) => {
+        const execName = nullableString(executive.name ?? executive.full_name);
+        return Boolean(
+          execName && head && execName.toLowerCase() === head.toLowerCase(),
+        );
+      });
+
+      return [
+        {
+          name,
+          head,
+          head_title:
+            nullableString(item.head_title) ??
+            nullableString(matchedExec?.title ?? matchedExec?.role),
+          size: numberish(item.size ?? item.headcount),
+        },
+      ];
+    })
+    .slice(0, 12);
+
+  if (!departments.length) {
+    departments.push(...walked.departments);
+  }
+  if (!firmographic.industry && walked.firmographic.industry) {
+    Object.assign(firmographic, walked.firmographic);
+  }
+
+  return {
+    name: nullableString(firmographic.name),
+    industry: nullableString(firmographic.industry),
+    employee_count: numberish(
+      firmographic.headcount ?? firmographic.employee_count,
+    ),
+    location: nullableString(
+      firmographic.hq ?? firmographic.headquarters ?? firmographic.location,
+    ),
+    executives,
+    departments,
+  };
+}
+
+export function mergeAktaIntoCompany(
+  company: CompanyBrief,
+  akta: ReturnType<typeof parseAktaCompany>,
+  website: string,
+): CompanyBrief {
+  return {
+    ...company,
+    industry: company.industry ?? akta.industry,
+    employee_count: company.employee_count ?? akta.employee_count,
+    location: company.location ?? akta.location ?? company.headquarters,
+    headquarters: company.headquarters ?? akta.location,
+    website: company.website ?? website,
+    departments: akta.departments.length
+      ? akta.departments
+      : company.departments,
+  };
+}
+
+export function inferDepartmentsFromPeople(people: RelevantPerson[]): Department[] {
+  const byDept = new Map<string, Department>();
+
+  for (const person of people) {
+    const match = DEPARTMENT_TITLE_MAP.find(([pattern]) =>
+      pattern.test(person.title.toLowerCase()),
+    );
+    const name = match?.[1] ?? "Other";
+    const existing = byDept.get(name);
+
+    if (!existing) {
+      byDept.set(name, {
+        name,
+        head: person.name,
+        head_title: person.title,
+        size: null,
+      });
+    }
+  }
+
+  return Array.from(byDept.values()).slice(0, 10);
+}
+
+export function mergeAktaPeople(
+  people: RelevantPerson[],
+  akta: ReturnType<typeof parseAktaCompany>,
+  company: CompanyBrief,
+  market: MarketIntelligence,
+): RelevantPerson[] {
+  const extra = akta.executives.flatMap((executive) => {
+    const candidate = parsePersonCandidate({
+      ...executive,
+      company: company.company_name,
+    });
+
+    if (!candidate) {
+      return [];
+    }
+
+    return [
+      {
+        ...candidate,
+        sources: Array.from(new Set([...candidate.sources, "akta"])),
+        ...makePersonRationale(candidate, company, market),
+      },
+    ];
+  });
+
+  const merged = [...people];
+  const seen = new Set(
+    people.map((person) => `${person.name.toLowerCase()}-${person.company.toLowerCase()}`),
+  );
+
+  for (const person of extra) {
+    const key = `${person.name.toLowerCase()}-${person.company.toLowerCase()}`;
+    if (!seen.has(key) && merged.length < 8) {
+      seen.add(key);
+      merged.push(person);
+    }
+  }
+
+  return merged;
+}
+
+export function enrichMarketIntelligence(
+  market: MarketIntelligence,
+  company: CompanyBrief,
+): MarketIntelligence {
+  const competitorNames = market.competitors
+    .map((item) => item.name)
+    .slice(0, 3)
+    .join(", ");
+
+  return {
+    ...market,
+    recent_activity: market.signals.map((signal) => signal.title).slice(0, 5),
+    positioning:
+      market.positioning ??
+      (company.industry
+        ? `${company.company_name} operates in ${company.industry}${
+            competitorNames ? `, with overlap against ${competitorNames}` : ""
+          }.`
+        : null),
+  };
+}
+
+export function findScrapeMarkdown(value: unknown, depth = 0): string | null {
+  if (depth > 6 || !value) {
+    return null;
+  }
+
+  if (typeof value === "string" && value.trim().length > 80) {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findScrapeMarkdown(item, depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const nested = isRecord(value.formats) ? value.formats.markdown : value.markdown;
+  if (typeof nested === "string" && nested.trim()) {
+    return nested.trim();
+  }
+
+  for (const key of ["data", "result", "output", "formats"]) {
+    if (key in value) {
+      const found = findScrapeMarkdown(value[key], depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function fillCompanyFromScrape(
+  company: CompanyBrief,
+  markdown: string | null,
+  website: string,
+): CompanyBrief {
+  if (!markdown) {
+    return { ...company, website: company.website || website };
+  }
+
+  const cleaned = markdown
+    .replace(/[#>*_`]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const snippet =
+    cleaned.length > 420 ? `${cleaned.slice(0, 417).trimEnd()}...` : cleaned;
+
+  return {
+    ...company,
+    website: company.website || website,
+    description:
+      company.description && company.description.length > 80
+        ? company.description
+        : snippet || company.description,
+  };
 }
 
 export function isRecordValue(

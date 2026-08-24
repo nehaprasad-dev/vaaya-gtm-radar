@@ -6,6 +6,7 @@ import type {
   CompanyBrief,
   MarketIntelligence,
   RelevantPerson,
+  VendorUsed,
 } from "@/lib/company";
 
 type AnalyzeResponse = {
@@ -17,6 +18,8 @@ type AnalyzeResponse = {
   market_error?: string | null;
   people?: RelevantPerson[];
   people_error?: string | null;
+  akta_error?: string | null;
+  vendors?: VendorUsed[];
   evidence?: unknown;
   charged_cents?: number;
   balance_remaining_cents?: number | null;
@@ -37,7 +40,7 @@ type AnalyzeResponse = {
 };
 
 export default function Home() {
-  const [url, setUrl] = useState("https://www.anthropic.com");
+  const [url, setUrl] = useState("https://dub.co");
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -104,8 +107,8 @@ export default function Home() {
             </h1>
           </div>
           <p className="max-w-md font-mono text-xs uppercase leading-6 tracking-[0.12em] text-[#6b665c]">
-            Start with a public website. Radar builds the company brief, market
-            context, relevant people, and a simple GTM map.
+            Context, relevant people, and a simple GTM map — via one Vaaya key
+            instead of separate Firecrawl, Exa, and Akta accounts.
           </p>
         </section>
 
@@ -162,7 +165,7 @@ function LoadingPanel() {
     "Read website",
     "Extract brief",
     "Find signals",
-    "Map competitors",
+    "Map org chart",
     "Find people",
   ];
 
@@ -188,10 +191,10 @@ function LoadingPanel() {
 
 function LandingPreview() {
   const items = [
-    ["01 Company", "Overview, products, ICP, industry."],
-    ["02 Market", "Cited news, launches, and competitors."],
-    ["03 People", "Founders, growth, sales — and why them."],
-    ["04 Action", "Who to contact, what to say, what to watch."],
+    ["01 Overview", "Description, industry, size, location, website."],
+    ["02 Structure", "Departments, heads, and decision-makers."],
+    ["03 Market", "Competitors, signals, and positioning."],
+    ["04 Outreach", "Who to contact, why now, and the angle."],
   ];
 
   return (
@@ -215,8 +218,14 @@ function CompanyReport({
   company: CompanyBrief;
   result: AnalyzeResponse;
 }) {
-  const market = result.market ?? { signals: [], competitors: [] };
+  const market = result.market ?? {
+    signals: [],
+    competitors: [],
+    positioning: null,
+    recent_activity: [],
+  };
   const people = result.people ?? [];
+  const vendors = result.vendors ?? [];
 
   return (
     <section className="mt-14 space-y-10">
@@ -238,17 +247,26 @@ function CompanyReport({
           </p>
         </div>
         <aside className="grid grid-cols-2 gap-px self-start bg-[#d9d4c8]">
-          <Stat label="Signals" value={market.signals.length} />
-          <Stat label="Competitors" value={market.competitors.length} />
+          <Stat label="Departments" value={company.departments.length} />
           <Stat label="People" value={people.length} />
+          <Stat label="Signals" value={market.signals.length} />
           <Stat label="Cost" value={`${result.charged_cents ?? 0}c`} />
         </aside>
       </div>
 
-      <div className="grid gap-px bg-[#d9d4c8] sm:grid-cols-3">
+      <div className="grid gap-px bg-[#d9d4c8] sm:grid-cols-2 lg:grid-cols-5">
         <Fact label="Industry" value={company.industry} />
+        <Fact
+          label="Size"
+          value={
+            company.employee_count
+              ? `${company.employee_count} employees`
+              : null
+          }
+        />
+        <Fact label="Location" value={company.location ?? company.headquarters} />
+        <Fact label="Website" value={company.website} />
         <Fact label="Model" value={company.business_model} />
-        <Fact label="HQ" value={company.headquarters} />
       </div>
 
       <div className="grid gap-10 lg:grid-cols-2">
@@ -260,10 +278,20 @@ function CompanyReport({
         />
       </div>
 
+      <StructureSection
+        company={company}
+        people={people}
+        error={result.akta_error ?? null}
+      />
+
       <GtmMap company={company} market={market} people={people} />
 
       <MarketSection market={market} error={result.market_error ?? null} />
       <PeopleSection people={people} error={result.people_error ?? null} />
+
+      <OutreachSection people={people} market={market} />
+
+      {vendors.length ? <VendorsUsed vendors={vendors} /> : null}
 
       <div className="grid gap-10 lg:grid-cols-2">
         <div>
@@ -327,10 +355,27 @@ function MarketSection({
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
           <Eyebrow>Market radar</Eyebrow>
-          <h3 className="mt-3 font-serif text-3xl">Signals and competitors</h3>
+          <h3 className="mt-3 font-serif text-3xl">Signals, competitors, positioning</h3>
         </div>
         {error ? <Warning>{error}</Warning> : null}
       </div>
+      {market.positioning ? (
+        <p className="mt-6 max-w-3xl text-sm leading-7 text-[#3f3b34]">
+          {market.positioning}
+        </p>
+      ) : null}
+      {market.recent_activity.length ? (
+        <div className="mt-4">
+          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+            Recent activity
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
+            {market.recent_activity.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="mt-8 grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="divide-y divide-[#d9d4c8] border-y border-[#d9d4c8]">
           {market.signals.length ? (
@@ -382,6 +427,120 @@ function MarketSection({
             <p className="py-5 text-sm text-[#6b665c]">No competitors returned.</p>
           )}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function StructureSection({
+  company,
+  people,
+  error,
+}: {
+  company: CompanyBrief;
+  people: RelevantPerson[];
+  error: string | null;
+}) {
+  const decisionMakers = people.filter((person) =>
+    /\b(founder|ceo|chief|head|vp|director)\b/i.test(person.title),
+  );
+
+  return (
+    <section>
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <Eyebrow>Company structure</Eyebrow>
+          <h3 className="mt-3 font-serif text-3xl">
+            {company.departments.length
+              ? `${company.departments.length} departments`
+              : "Departments and heads"}
+          </h3>
+        </div>
+        {error ? <Warning>{error}</Warning> : null}
+      </div>
+      <div className="mt-8 divide-y divide-[#d9d4c8] border-y border-[#d9d4c8]">
+        {company.departments.length ? (
+          company.departments.map((department) => (
+            <div
+              key={department.name}
+              className="grid gap-2 py-4 sm:grid-cols-[1fr_1.4fr_auto]"
+            >
+              <p className="font-medium">{department.name}</p>
+              <p className="text-sm text-[#3f3b34]">
+                {department.head
+                  ? `${department.head}${department.head_title ? ` · ${department.head_title}` : ""}`
+                  : "Head not listed"}
+              </p>
+              <p className="font-mono text-xs text-[#6b665c]">
+                {department.size ? `${department.size} people` : "—"}
+              </p>
+            </div>
+          ))
+        ) : (
+          <p className="py-4 text-sm text-[#6b665c]">
+            No department map returned yet.
+          </p>
+        )}
+      </div>
+      {decisionMakers.length ? (
+        <p className="mt-4 text-sm text-[#3f3b34]">
+          Key decision-makers:{" "}
+          {decisionMakers
+            .slice(0, 6)
+            .map((person) => `${person.name} (${person.title})`)
+            .join(" · ")}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function OutreachSection({
+  people,
+  market,
+}: {
+  people: RelevantPerson[];
+  market: MarketIntelligence;
+}) {
+  const primary = people[0];
+
+  return (
+    <section>
+      <Eyebrow>Outreach</Eyebrow>
+      <h3 className="mt-3 font-serif text-3xl">Why reach out, why now</h3>
+      {primary ? (
+        <div className="mt-6 grid gap-px bg-[#d9d4c8] lg:grid-cols-3">
+          <Reason title="Why reach out" text={primary.why_this_person} />
+          <Reason title="Why now" text={primary.why_now} />
+          <Reason title="Suggested message" text={primary.outreach_angle} />
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-[#6b665c]">No outreach angle yet.</p>
+      )}
+      {market.signals[0] ? (
+        <p className="mt-4 text-sm text-[#6b665c]">
+          Lead with: {market.signals[0].title}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function VendorsUsed({ vendors }: { vendors: VendorUsed[] }) {
+  return (
+    <section>
+      <Eyebrow>One Vaaya API key</Eyebrow>
+      <h3 className="mt-3 font-serif text-3xl">Providers used in this run</h3>
+      <div className="mt-6 divide-y divide-[#d9d4c8] border-y border-[#d9d4c8]">
+        {vendors.map((vendor) => (
+          <div
+            key={`${vendor.name}-${vendor.used_for}`}
+            className="grid gap-2 py-4 sm:grid-cols-[160px_1fr]"
+          >
+            <p className="font-medium">{vendor.name}</p>
+            <p className="text-sm text-[#3f3b34]">{vendor.used_for}</p>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -544,6 +703,7 @@ function AuditFooter({ result }: { result: AnalyzeResponse }) {
               provider: result.provider,
               market_provider: result.market_provider,
               people_provider: result.people_provider,
+              vendors: result.vendors,
               requested_url: result.requested_url,
               evidence: result.evidence,
               details: result.details,

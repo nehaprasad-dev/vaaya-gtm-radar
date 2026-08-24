@@ -2,14 +2,23 @@ import { NextResponse } from "next/server";
 
 import {
   companyBriefSchema,
+  enrichMarketIntelligence,
+  fillCompanyFromScrape,
+  findScrapeMarkdown,
+  inferDepartmentsFromPeople,
   isRecordValue,
+  parseAktaCompany,
   parseCompanyBrief,
   parseMarketResults,
+  mergeAktaIntoCompany,
+  mergeAktaPeople,
   mergeEnrichedPeople,
   parsePeopleCandidates,
+  personBelongsToCompany,
   type CompanyBrief,
   type MarketIntelligence,
   type RelevantPerson,
+  type VendorUsed,
 } from "@/lib/company";
 import { VaayaApiError, vaayaRun, type VaayaRunResponse } from "@/lib/vaaya";
 
@@ -23,6 +32,9 @@ const MAX_COMPETITOR_RESEARCH_COST_CENTS = 6;
 const MAX_PEOPLE_DISCOVERY_COST_CENTS = 2;
 const MAX_PEOPLE_ENRICHMENT_COST_CENTS = 60;
 const MAX_CONTACT_FALLBACK_COST_CENTS = 10;
+const MAX_AKTA_COST_CENTS = 150;
+const MAX_EXA_SEARCH_COST_CENTS = 3;
+const MAX_FIRECRAWL_SCRAPE_COST_CENTS = 5;
 const POLL_INTERVAL_MS = 2500;
 const MAX_POLL_ATTEMPTS = 20;
 const MARKET_MAX_POLL_ATTEMPTS = 6;
@@ -46,6 +58,8 @@ type AnalyzeSuccessResponse = {
   market_error: string | null;
   people: RelevantPerson[];
   people_error: string | null;
+  akta_error: string | null;
+  vendors: VendorUsed[];
   evidence: unknown;
   charged_cents: number;
   balance_remaining_cents: number | null;
@@ -55,8 +69,8 @@ type AnalyzeSuccessResponse = {
     action: "extract";
   };
   market_provider: {
-    service: "vaaya";
-    action: "supersearch";
+    service: "exa";
+    action: "search";
   };
   people_provider: {
     discovery: "vaaya/onefind";
@@ -425,22 +439,62 @@ async function runCompetitorResearch(
   };
 }
 
+async function runExaSearch(company: CompanyBrief) {
+  const query = `${company.company_name} recent news OR funding OR hiring OR launch`;
+  const response = await vaayaRun("exa", "search", {
+    query,
+    type: "auto",
+    numResults: 8,
+    contents: { text: false },
+  }, {
+    maxCostCents: MAX_EXA_SEARCH_COST_CENTS,
+  });
+
+  return {
+    market: parseMarketResults(response.data),
+    chargedCents: response.charged_cents ?? 0,
+    balanceRemainingCents: response.balance_remaining_cents ?? null,
+    raw: response.data,
+  };
+}
+
+async function runHomepageScrape(companyUrl: string) {
+  const response = await vaayaRun("firecrawl", "scrape", {
+    url: companyUrl,
+    formats: ["markdown"],
+    onlyMainContent: true,
+    waitFor: 1500,
+  }, {
+    maxCostCents: MAX_FIRECRAWL_SCRAPE_COST_CENTS,
+  });
+
+  return {
+    markdown: findScrapeMarkdown(response.data),
+    chargedCents: response.charged_cents ?? 0,
+    balanceRemainingCents: response.balance_remaining_cents ?? null,
+  };
+}
+
 async function runMarketResearch(
   company: CompanyBrief,
   companyUrl: string,
 ) {
-  const [signalResult, competitorResult] = await Promise.allSettled([
+  const [signalResult, competitorResult, exaResult] = await Promise.allSettled([
     runSignalResearch(company),
     runCompetitorResearch(company, companyUrl),
+    runExaSearch(company),
   ]);
   const market: MarketIntelligence = {
     signals: [],
     competitors: [],
+    positioning: null,
+    recent_activity: [],
   };
   const errors: string[] = [];
   let chargedCents = 0;
   let balanceRemainingCents: number | null = null;
   const raw: Record<string, unknown> = {};
+  const usedExa = exaResult.status === "fulfilled";
 
   if (signalResult.status === "fulfilled") {
     market.signals = signalResult.value.market.signals;
@@ -448,11 +502,31 @@ async function runMarketResearch(
     balanceRemainingCents = signalResult.value.balanceRemainingCents;
     raw.signals = signalResult.value.raw;
   } else {
-    errors.push("Recent signals are temporarily unavailable.");
+    errors.push("Recent SuperSearch signals are temporarily unavailable.");
     raw.signal_error =
       signalResult.reason instanceof VaayaApiError
         ? signalResult.reason.response
         : String(signalResult.reason);
+  }
+
+  if (exaResult.status === "fulfilled") {
+    const seen = new Set(market.signals.map((signal) => signal.url));
+    for (const signal of exaResult.value.market.signals) {
+      if (!seen.has(signal.url) && market.signals.length < 6) {
+        seen.add(signal.url);
+        market.signals.push(signal);
+      }
+    }
+    chargedCents += exaResult.value.chargedCents;
+    balanceRemainingCents =
+      exaResult.value.balanceRemainingCents ?? balanceRemainingCents;
+    raw.exa = exaResult.value.raw;
+  } else {
+    errors.push("Exa search is temporarily unavailable.");
+    raw.exa_error =
+      exaResult.reason instanceof VaayaApiError
+        ? exaResult.reason.response
+        : String(exaResult.reason);
   }
 
   if (competitorResult.status === "fulfilled") {
@@ -475,6 +549,33 @@ async function runMarketResearch(
     chargedCents,
     balanceRemainingCents,
     raw,
+    usedExa,
+  };
+}
+
+async function runAktaResearch(company: CompanyBrief, companyUrl: string) {
+  const domain = new URL(companyUrl).hostname.replace(/^www\./, "");
+  const response = await vaayaRun("akta", "company-enrich", {
+    company: domain,
+    sections: ["firmographic", "management_profile", "company_hierarchy"],
+  }, {
+    maxCostCents: MAX_AKTA_COST_CENTS,
+  });
+
+  const parsed = parseAktaCompany(response.data);
+  console.info("Akta company-enrich", {
+    chargedCents: response.charged_cents ?? 0,
+    departments: parsed.departments.length,
+    executives: parsed.executives.length,
+    employeeCount: parsed.employee_count,
+    location: parsed.location,
+  });
+
+  return {
+    parsed,
+    chargedCents: response.charged_cents ?? 0,
+    balanceRemainingCents: response.balance_remaining_cents ?? null,
+    raw: response.data,
   };
 }
 
@@ -682,52 +783,99 @@ export async function POST(request: Request) {
 
   try {
     const analysis = await analyzeWithFallback(companyUrl);
-    const { company, settled } = analysis;
+    let company = {
+      ...analysis.company,
+      website: analysis.company.website || companyUrl,
+    };
+    const { settled } = analysis;
     let market: MarketIntelligence = {
       signals: [],
       competitors: [],
+      positioning: null,
+      recent_activity: [],
     };
     let marketError: string | null = null;
     let marketChargedCents = 0;
     let people: RelevantPerson[] = [];
     let peopleError: string | null = null;
     let peopleChargedCents = 0;
+    let aktaError: string | null = null;
+    let aktaChargedCents = 0;
     let balanceRemainingCents = settled.balanceRemainingCents;
+    let scrapeChargedCents = 0;
+    const vendors: VendorUsed[] = [
+      {
+        name: analysis.provider === "firecrawl" ? "Firecrawl extract" : "CRW extract",
+        used_for: "Structured company brief from the website",
+      },
+    ];
 
-    try {
-      const marketResearch = await runMarketResearch(company, companyUrl);
-      market = marketResearch.market;
+    const [marketOutcome, aktaOutcome, scrapeOutcome] = await Promise.allSettled([
+      runMarketResearch(company, companyUrl),
+      runAktaResearch(company, companyUrl),
+      runHomepageScrape(companyUrl),
+    ]);
+
+    if (scrapeOutcome.status === "fulfilled") {
+      const scrape = scrapeOutcome.value;
+      company = fillCompanyFromScrape(company, scrape.markdown, companyUrl);
+      scrapeChargedCents = scrape.chargedCents;
+      balanceRemainingCents =
+        scrape.balanceRemainingCents ?? balanceRemainingCents;
+      vendors.push({
+        name: "Firecrawl",
+        used_for: "Homepage scrape for smaller-company site content",
+      });
+    }
+
+    if (marketOutcome.status === "fulfilled") {
+      const marketResearch = marketOutcome.value;
+      market = enrichMarketIntelligence(marketResearch.market, company);
       marketChargedCents = marketResearch.chargedCents;
       balanceRemainingCents =
         marketResearch.balanceRemainingCents ?? balanceRemainingCents;
+      if (marketResearch.usedExa) {
+        vendors.push({
+          name: "Exa",
+          used_for: "Recent news and public web discovery",
+        });
+      }
+      vendors.push({ name: "OpenFunnel", used_for: "Competitor lookalikes" });
 
       if (marketResearch.errors.length) {
         marketError = marketResearch.errors.join(" ");
-        console.warn(
-          "Vaaya market research completed partially",
-          JSON.stringify(marketResearch.raw, null, 2),
-        );
       } else if (!market.signals.length && !market.competitors.length) {
         marketError = "No cited market results were returned.";
-        console.warn(
-          "Vaaya market research returned no normalized results",
-          JSON.stringify(marketResearch.raw, null, 2),
-        );
       }
-    } catch (marketResearchError) {
+    } else {
       marketError = "Live market research is temporarily unavailable.";
-      console.error(
-        "Vaaya market research failed",
-        marketResearchError instanceof VaayaApiError
+      console.error("Vaaya market research failed", marketOutcome.reason);
+    }
+
+    if (aktaOutcome.status === "fulfilled") {
+      const aktaResearch = aktaOutcome.value;
+      company = mergeAktaIntoCompany(company, aktaResearch.parsed, companyUrl);
+      aktaChargedCents = aktaResearch.chargedCents;
+      balanceRemainingCents =
+        aktaResearch.balanceRemainingCents ?? balanceRemainingCents;
+      vendors.push({
+        name: "Akta.pro",
+        used_for: "Firmographics, departments, and leadership",
+      });
+    } else {
+      aktaError = "Company structure data is temporarily unavailable.";
+      console.warn(
+        "Akta enrichment failed",
+        aktaOutcome.reason instanceof VaayaApiError
           ? JSON.stringify(
               {
-                status: marketResearchError.status,
-                response: marketResearchError.response,
+                status: aktaOutcome.reason.status,
+                response: aktaOutcome.reason.response,
               },
               null,
               2,
             )
-          : marketResearchError,
+          : aktaOutcome.reason,
       );
     }
 
@@ -737,6 +885,29 @@ export async function POST(request: Request) {
       peopleChargedCents = peopleResearch.chargedCents;
       balanceRemainingCents =
         peopleResearch.balanceRemainingCents ?? balanceRemainingCents;
+      vendors.push(
+        { name: "OneFind", used_for: "People discovery and contact enrichment" },
+      );
+
+      if (aktaOutcome.status === "fulfilled") {
+        people = mergeAktaPeople(
+          people,
+          aktaOutcome.value.parsed,
+          company,
+          market,
+        );
+      }
+
+      people = people.filter((person) =>
+        personBelongsToCompany(person, company, companyUrl),
+      );
+
+      if (!company.departments.length) {
+        company = {
+          ...company,
+          departments: inferDepartmentsFromPeople(people),
+        };
+      }
 
       if (!people.length) {
         peopleError = "No relevant people were found for this company yet.";
@@ -758,6 +929,8 @@ export async function POST(request: Request) {
       );
     }
 
+    market = enrichMarketIntelligence(market, company);
+
     const response: AnalyzeSuccessResponse = {
       ok: true,
       requested_url: companyUrl,
@@ -766,9 +939,15 @@ export async function POST(request: Request) {
       market_error: marketError,
       people,
       people_error: peopleError,
+      akta_error: aktaError,
+      vendors,
       evidence: findEvidence(settled.response.data),
       charged_cents:
-        settled.chargedCents + marketChargedCents + peopleChargedCents,
+        settled.chargedCents +
+        marketChargedCents +
+        peopleChargedCents +
+        aktaChargedCents +
+        scrapeChargedCents,
       balance_remaining_cents: balanceRemainingCents,
       cached: false,
       provider: {
@@ -776,8 +955,8 @@ export async function POST(request: Request) {
         action: "extract",
       },
       market_provider: {
-        service: "vaaya",
-        action: "supersearch",
+        service: "exa",
+        action: "search",
       },
       people_provider: {
         discovery: "vaaya/onefind",
@@ -788,7 +967,9 @@ export async function POST(request: Request) {
     analysisCache.set(companyUrl, {
       expiresAt:
         Date.now() +
-        (marketError || peopleError ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS),
+        (marketError || peopleError || aktaError
+          ? PARTIAL_CACHE_TTL_MS
+          : CACHE_TTL_MS),
       response,
     });
 
