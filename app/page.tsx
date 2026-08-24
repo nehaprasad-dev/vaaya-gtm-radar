@@ -2,18 +2,24 @@
 
 import { FormEvent, useState } from "react";
 
-import type { CompanyBrief } from "@/lib/company";
+import type { CompanyBrief, MarketIntelligence } from "@/lib/company";
 
 type AnalyzeResponse = {
   ok: boolean;
   error?: string;
   requested_url?: string;
   company?: CompanyBrief;
+  market?: MarketIntelligence;
+  market_error?: string | null;
   evidence?: unknown;
   charged_cents?: number;
   balance_remaining_cents?: number | null;
   cached?: boolean;
   provider?: {
+    service: string;
+    action: string;
+  };
+  market_provider?: {
     service: string;
     action: string;
   };
@@ -148,10 +154,11 @@ function LoadingStory() {
           </p>
         </div>
       </div>
-      <div className="mt-7 grid gap-3 sm:grid-cols-3">
+      <div className="mt-7 grid gap-3 sm:grid-cols-4">
         <LoadingStep number="01" label="Reading website" active />
         <LoadingStep number="02" label="Extracting company profile" />
-        <LoadingStep number="03" label="Building GTM takeaways" />
+        <LoadingStep number="03" label="Finding market signals" />
+        <LoadingStep number="04" label="Mapping competitors" />
       </div>
     </section>
   );
@@ -183,8 +190,8 @@ function LoadingStep({
 function EmptyState() {
   const outcomes = [
     ["Company profile", "What they do, sell, and how they position."],
-    ["Ideal customers", "Who the company appears to serve."],
-    ["GTM takeaways", "Website-informed angles worth exploring."],
+    ["Market signals", "Recent launches, funding, hiring, and news."],
+    ["Competitors", "Who else competes for the same customer."],
   ];
 
   return (
@@ -278,6 +285,11 @@ function CompanyReport({
         />
       </div>
 
+      <MarketSection
+        market={result.market}
+        error={result.market_error ?? null}
+      />
+
       <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
         <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.08] p-7 sm:p-8">
           <SectionLabel light>GTM intelligence</SectionLabel>
@@ -343,6 +355,7 @@ function CompanyReport({
             {JSON.stringify(
               {
                 provider: result.provider,
+                market_provider: result.market_provider,
                 requested_url: result.requested_url,
                 evidence: result.evidence,
                 details: result.details,
@@ -355,6 +368,121 @@ function CompanyReport({
       </div>
     </section>
   );
+}
+
+function MarketSection({
+  market,
+  error,
+}: {
+  market?: MarketIntelligence;
+  error: string | null;
+}) {
+  const signals = market?.signals ?? [];
+  const competitors = market?.competitors ?? [];
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04]">
+      <div className="border-b border-white/10 p-7 sm:p-8">
+        <SectionLabel light>Market radar</SectionLabel>
+        <div className="mt-2 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+          <h3 className="text-2xl font-semibold">What is happening around them</h3>
+          <p className="text-xs text-slate-500">Current web research · cited sources</p>
+        </div>
+        {error ? (
+          <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+            {error}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="grid lg:grid-cols-[1.25fr_0.75fr]">
+        <div className="border-b border-white/10 p-7 sm:p-8 lg:border-b-0 lg:border-r">
+          <p className="text-sm font-semibold text-slate-200">Recent signals</p>
+          <div className="mt-5 space-y-3">
+            {signals.length ? (
+              signals.map((signal) => (
+                <a
+                  key={`${signal.title}-${signal.url}`}
+                  href={signal.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block rounded-2xl border border-white/10 bg-[#0b1728]/70 p-5 transition hover:border-cyan-300/30"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-[0.12em] text-cyan-300">
+                    {signal.type ? <span>{signal.type}</span> : null}
+                    {signal.date ? (
+                      <>
+                        <span className="text-slate-600">·</span>
+                        <span>{formatSignalDate(signal.date)}</span>
+                      </>
+                    ) : null}
+                  </div>
+                  <h4 className="mt-2 font-semibold leading-6 text-white">
+                    {signal.title}
+                  </h4>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    {signal.summary}
+                  </p>
+                  <p className="mt-3 text-xs text-slate-500">
+                    {signal.source} ↗
+                  </p>
+                </a>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">
+                No cited recent signals were found.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="p-7 sm:p-8">
+          <p className="text-sm font-semibold text-slate-200">Competitive set</p>
+          <div className="mt-5 space-y-3">
+            {competitors.length ? (
+              competitors.map((competitor, index) => (
+                <a
+                  key={`${competitor.name}-${competitor.url}`}
+                  href={competitor.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex gap-4 rounded-2xl border border-white/10 bg-white/[0.035] p-4 transition hover:border-cyan-300/30"
+                >
+                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/10 text-xs font-semibold text-cyan-300">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <h4 className="font-semibold text-white">
+                      {competitor.name}
+                    </h4>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                      {competitor.reason}
+                    </p>
+                  </div>
+                </a>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">
+                No cited competitors were returned.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatSignalDate(value: string) {
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("en", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }).format(date);
 }
 
 function SectionLabel({
