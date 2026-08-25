@@ -599,7 +599,7 @@ function PeopleSection({
                     {person.linkedin ? (
                       <a
                         href={person.linkedin}
-                        target="_blank"
+            target="_blank"
                         rel="noreferrer"
                         className="block underline"
                       >
