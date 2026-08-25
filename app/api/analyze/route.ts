@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
 import {
+  companyBriefFromScrape,
   companyBriefSchema,
   enrichMarketIntelligence,
   fillCompanyFromScrape,
+  findScrapeHtml,
   findScrapeMarkdown,
   inferDepartmentsFromPeople,
   isRecordValue,
@@ -22,11 +24,12 @@ import {
 } from "@/lib/company";
 import { VaayaApiError, vaayaRun, type VaayaRunResponse } from "@/lib/vaaya";
 
+export const maxDuration = 300;
+
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_REQUESTS = 5;
-const MAX_CRW_EXTRACTION_COST_CENTS = 10;
-const MAX_FIRECRAWL_EXTRACTION_COST_CENTS = 8;
+const MAX_CRW_EXTRACTION_COST_CENTS = 12;
 const MAX_MARKET_RESEARCH_COST_CENTS = 10;
 const MAX_COMPETITOR_RESEARCH_COST_CENTS = 6;
 const MAX_PEOPLE_DISCOVERY_COST_CENTS = 2;
@@ -34,7 +37,7 @@ const MAX_PEOPLE_ENRICHMENT_COST_CENTS = 60;
 const MAX_CONTACT_FALLBACK_COST_CENTS = 10;
 const MAX_AKTA_COST_CENTS = 150;
 const MAX_EXA_SEARCH_COST_CENTS = 3;
-const MAX_FIRECRAWL_SCRAPE_COST_CENTS = 5;
+const MAX_FIRECRAWL_SCRAPE_COST_CENTS = 6;
 const POLL_INTERVAL_MS = 2500;
 const MAX_POLL_ATTEMPTS = 20;
 const MARKET_MAX_POLL_ATTEMPTS = 6;
@@ -298,28 +301,27 @@ async function waitForExtraction(
   throw new VaayaApiError("Company extraction timed out.", 504);
 }
 
-async function runExtractionProvider(
-  service: "crw" | "firecrawl",
-  companyUrl: string,
-) {
-  const maxCostCents =
-    service === "crw"
-      ? MAX_CRW_EXTRACTION_COST_CENTS
-      : MAX_FIRECRAWL_EXTRACTION_COST_CENTS;
-  const initial = await vaayaRun(service, "extract", {
-    urls: [companyUrl],
-    schema: companyBriefSchema,
-    basis: true,
-    max_context_chars: 12000,
-  }, {
-    maxCostCents,
-  });
-  const settled = await waitForExtraction(initial, service);
+async function runCrwUrlExtract(companyUrl: string) {
+  const initial = await vaayaRun(
+    "crw",
+    "extract",
+    {
+      urls: [companyUrl],
+      schema: companyBriefSchema,
+      basis: true,
+      max_context_chars: 12000,
+      timeout_ms: 45000,
+    },
+    {
+      maxCostCents: MAX_CRW_EXTRACTION_COST_CENTS,
+    },
+  );
+  const settled = await waitForExtraction(initial, "crw");
   const company = findCompanyBrief(settled.response.data);
 
   if (!company) {
     throw new VaayaApiError(
-      `${service} completed but returned no structured company brief.`,
+      "crw completed but returned no structured company brief.",
       502,
       settled.response,
     );
@@ -328,31 +330,115 @@ async function runExtractionProvider(
   return {
     company,
     settled,
-    provider: service,
+    provider: "crw" as const,
+    scrapeMarkdown: null as string | null,
+  };
+}
+
+async function runScrapeThenExtract(companyUrl: string) {
+  const scrape = await vaayaRun(
+    "firecrawl",
+    "scrape",
+    {
+      url: companyUrl,
+      formats: ["markdown", "html"],
+      onlyMainContent: true,
+      waitFor: 2000,
+    },
+    {
+      maxCostCents: MAX_FIRECRAWL_SCRAPE_COST_CENTS,
+    },
+  );
+
+  const markdown = findScrapeMarkdown(scrape.data);
+  const html = findScrapeHtml(scrape.data);
+  let chargedCents = scrape.charged_cents ?? 0;
+  let balanceRemainingCents = scrape.balance_remaining_cents ?? null;
+
+  if (html && html.length >= 500) {
+    try {
+      const initial = await vaayaRun(
+        "crw",
+        "extract",
+        {
+          htmls: [html.slice(0, 120000)],
+          schema: companyBriefSchema,
+          basis: true,
+          max_context_chars: 12000,
+          timeout_ms: 45000,
+        },
+        {
+          maxCostCents: MAX_CRW_EXTRACTION_COST_CENTS,
+        },
+      );
+      const settled = await waitForExtraction(initial, "crw");
+      chargedCents += settled.chargedCents;
+      balanceRemainingCents =
+        settled.balanceRemainingCents ?? balanceRemainingCents;
+      const company = findCompanyBrief(settled.response.data);
+
+      if (company) {
+        return {
+          company: fillCompanyFromScrape(company, markdown, companyUrl),
+          settled: {
+            response: settled.response,
+            chargedCents,
+            balanceRemainingCents,
+          },
+          provider: "firecrawl" as const,
+          scrapeMarkdown: markdown,
+        };
+      }
+    } catch (error) {
+      console.warn(
+        "CRW extract-from-html failed; using scrape brief",
+        error instanceof VaayaApiError
+          ? JSON.stringify(
+              { status: error.status, response: error.response },
+              null,
+              2,
+            )
+          : error,
+      );
+    }
+  }
+
+  if (!markdown || markdown.length < 120) {
+    throw new VaayaApiError(
+      "Could not scrape enough page content for a company brief.",
+      502,
+      scrape,
+    );
+  }
+
+  return {
+    company: companyBriefFromScrape(companyUrl, markdown),
+    settled: {
+      response: scrape,
+      chargedCents,
+      balanceRemainingCents,
+    },
+    provider: "firecrawl" as const,
+    scrapeMarkdown: markdown,
   };
 }
 
 async function analyzeWithFallback(companyUrl: string) {
   try {
-    return await runExtractionProvider("crw", companyUrl);
+    return await runCrwUrlExtract(companyUrl);
   } catch (error) {
-    if (
-      !(error instanceof VaayaApiError) ||
-      (error.status !== 502 && error.status !== 504)
-    ) {
-      throw error;
-    }
-
     console.warn(
-      "CRW extraction failed; trying Firecrawl fallback",
-      JSON.stringify(
-        { status: error.status, response: error.response },
-        null,
-        2,
-      ),
+      "CRW URL extract failed; trying Firecrawl scrape + CRW html extract",
+      error instanceof VaayaApiError
+        ? JSON.stringify(
+            { status: error.status, response: error.response },
+            null,
+            2,
+          )
+        : error,
     );
 
-    return runExtractionProvider("firecrawl", companyUrl);
+    return runScrapeThenExtract(companyUrl);
   }
 }
 
@@ -805,15 +891,30 @@ export async function POST(request: Request) {
     let scrapeChargedCents = 0;
     const vendors: VendorUsed[] = [
       {
-        name: analysis.provider === "firecrawl" ? "Firecrawl extract" : "CRW extract",
-        used_for: "Structured company brief from the website",
+        name: analysis.provider === "firecrawl" ? "Firecrawl + CRW" : "CRW extract",
+        used_for:
+          analysis.provider === "firecrawl"
+            ? "Homepage scrape and company brief extraction"
+            : "Structured company brief from the website",
       },
     ];
+
+    const scrapePromise = analysis.scrapeMarkdown
+      ? Promise.resolve({
+          markdown: analysis.scrapeMarkdown,
+          chargedCents: 0,
+          balanceRemainingCents: null as number | null,
+          reused: true,
+        })
+      : runHomepageScrape(companyUrl).then((scrape) => ({
+          ...scrape,
+          reused: false,
+        }));
 
     const [marketOutcome, aktaOutcome, scrapeOutcome] = await Promise.allSettled([
       runMarketResearch(company, companyUrl),
       runAktaResearch(company, companyUrl),
-      runHomepageScrape(companyUrl),
+      scrapePromise,
     ]);
 
     if (scrapeOutcome.status === "fulfilled") {
@@ -822,10 +923,12 @@ export async function POST(request: Request) {
       scrapeChargedCents = scrape.chargedCents;
       balanceRemainingCents =
         scrape.balanceRemainingCents ?? balanceRemainingCents;
-      vendors.push({
-        name: "Firecrawl",
-        used_for: "Homepage scrape for smaller-company site content",
-      });
+      if (!scrape.reused && analysis.provider !== "firecrawl") {
+        vendors.push({
+          name: "Firecrawl",
+          used_for: "Homepage scrape for smaller-company site content",
+        });
+      }
     }
 
     if (marketOutcome.status === "fulfilled") {

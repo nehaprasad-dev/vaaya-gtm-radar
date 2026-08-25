@@ -965,6 +965,46 @@ export function enrichMarketIntelligence(
   };
 }
 
+export function findScrapeHtml(value: unknown, depth = 0): string | null {
+  if (depth > 6 || !value) {
+    return null;
+  }
+
+  if (typeof value === "string" && value.trim().length > 80) {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findScrapeHtml(item, depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const nested = isRecord(value.formats) ? value.formats.html : value.html;
+  if (typeof nested === "string" && nested.trim()) {
+    return nested.trim();
+  }
+
+  for (const key of ["data", "result", "output", "formats"]) {
+    if (key in value) {
+      const found = findScrapeHtml(value[key], depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  return null;
+}
+
 export function findScrapeMarkdown(value: unknown, depth = 0): string | null {
   if (depth > 6 || !value) {
     return null;
@@ -1003,6 +1043,46 @@ export function findScrapeMarkdown(value: unknown, depth = 0): string | null {
   }
 
   return null;
+}
+
+export function companyBriefFromScrape(
+  companyUrl: string,
+  markdown: string | null,
+): CompanyBrief {
+  const hostname = new URL(companyUrl).hostname.replace(/^www\./, "");
+  const name = hostname
+    .split(".")[0]
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+  const cleaned = (markdown ?? "")
+    .replace(/[#>*_`]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const description =
+    cleaned.length > 80
+      ? cleaned.length > 420
+        ? `${cleaned.slice(0, 417).trimEnd()}...`
+        : cleaned
+      : null;
+
+  return {
+    company_name: name,
+    tagline: null,
+    description,
+    products: [],
+    target_customers: [],
+    industry: null,
+    business_model: null,
+    headquarters: null,
+    location: null,
+    employee_count: null,
+    website: companyUrl,
+    departments: [],
+    key_links: [{ label: "Website", url: companyUrl }],
+    gtm_takeaways: [
+      "Brief built from the live homepage after structured extraction failed.",
+    ],
+  };
 }
 
 export function fillCompanyFromScrape(
