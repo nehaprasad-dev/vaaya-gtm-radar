@@ -155,6 +155,17 @@ export default function Home() {
         {isLoading ? <LoadingPanel /> : null}
         {!isLoading && !company ? <LandingPreview /> : null}
         {company ? <CompanyReport company={company} result={result} /> : null}
+
+        <footer className="mt-16 border-t border-[#d9d4c8] pt-6">
+          <a
+            href="https://github.com/nehaprasad-dev/vaaya-gtm-radar"
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#6b665c] underline-offset-4 hover:text-[#111] hover:underline"
+          >
+            View on GitHub
+          </a>
+        </footer>
       </div>
     </main>
   );
