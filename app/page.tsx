@@ -381,13 +381,14 @@ function CompanyReport({
             {company.company_name}
           </h2>
           {company.tagline ? (
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-[#3f3b34]">
-              {company.tagline}
+            <p className="mt-5 max-w-2xl font-serif text-2xl leading-8 text-[#3f3b34]">
+              {company.tagline.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1")}
             </p>
           ) : null}
-          <p className="mt-5 max-w-3xl text-base leading-8 text-[#3f3b34]">
-            {company.description ?? "No supported description was found."}
-          </p>
+          <CompanyCopy
+            text={company.description}
+            empty="No supported description was found."
+          />
           <ShareBar company={company} result={result} />
         </div>
         <aside className="grid grid-cols-2 gap-px self-start bg-[#d9d4c8]">
@@ -487,6 +488,45 @@ function CompanyReport({
 
       <AuditFooter result={result} />
     </section>
+  );
+}
+
+function CompanyCopy({
+  text,
+  empty,
+}: {
+  text: string | null;
+  empty: string;
+}) {
+  const cleaned = (text ?? "")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[#>*_`]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const paragraphs = cleaned
+    .split(/(?<=[.!?])\s+(?=[A-Z])/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (item.length < 24) {
+        return false;
+      }
+      return !/^(log in|sign up|sign in|get started|start for free)/i.test(item);
+    })
+    .slice(0, 3);
+
+  if (!paragraphs.length) {
+    return <p className="mt-5 max-w-3xl text-base leading-8 text-[#6b665c]">{empty}</p>;
+  }
+
+  return (
+    <div className="mt-5 max-w-3xl space-y-4">
+      {paragraphs.map((paragraph) => (
+        <p key={paragraph} className="text-base leading-8 text-[#3f3b34]">
+          {paragraph}
+        </p>
+      ))}
+    </div>
   );
 }
 
