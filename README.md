@@ -11,10 +11,10 @@ Built with one [Vaaya](https://vaaya.ai) API key instead of separate Firecrawl, 
 
 After a successful run, use **Share insights**, **Copy link**, or **Copy summary**.
 
-- Share links look like `/?s=...&url=https://company.com`
+- Share links look like `/?url=https://company.com#i=...` (insights packed in the link)
 - Opening a share link loads the saved brief instantly (no re-run, no extra charge)
 - `/?url=https://company.com` alone prefills and auto-analyzes that company
-- Share links use a short id (`/?s=s_abc123`) stored for 12 hours
+- Copy link uses a clipboard fallback so it works after the share URL is built
 
 ## What it returns
 

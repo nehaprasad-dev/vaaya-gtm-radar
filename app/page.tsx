@@ -9,8 +9,10 @@ import type {
   VendorUsed,
 } from "@/lib/company";
 import {
-  buildSharePageUrl,
+  buildDurableShareUrl,
   buildShareSnapshot,
+  copyTextToClipboard,
+  decodeShareHash,
   decodeShareSnapshot,
   formatShareText,
   isShortShareId,
@@ -126,6 +128,28 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const sharedToken = params.get("s");
     const sharedUrl = params.get("url");
+    const hashToken = new URLSearchParams(
+      window.location.hash.startsWith("#")
+        ? window.location.hash.slice(1)
+        : window.location.hash,
+    ).get("i");
+
+    if (hashToken) {
+      queueMicrotask(() => {
+        void (async () => {
+          const snapshot = await decodeShareHash(hashToken);
+          if (snapshot) {
+            setResult(snapshotToResult(snapshot));
+            if (snapshot.requested_url) {
+              setUrl(snapshot.requested_url);
+            }
+            return;
+          }
+          setError("This share link is invalid or too old to open.");
+        })();
+      });
+      return;
+    }
 
     if (sharedToken) {
       queueMicrotask(() => {
@@ -490,39 +514,32 @@ function ShareBar({
 
   async function createShareUrl() {
     const snapshot = makeSnapshot();
-    const response = await fetch("/api/share", {
+    const shareUrl = await buildDurableShareUrl(
+      window.location.origin,
+      snapshot,
+    );
+
+    // Best-effort short id for same-server opens; durable hash is the real share.
+    void fetch("/api/share", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ snapshot }),
-    });
-    const payload = (await response.json()) as {
-      ok?: boolean;
-      id?: string;
-      error?: string;
-    };
+    }).catch(() => undefined);
 
-    if (!response.ok || !payload.ok || !payload.id) {
-      throw new Error(payload.error ?? "Could not create share link");
-    }
-
-    return buildSharePageUrl(
-      window.location.origin,
-      payload.id,
-      snapshot.requested_url,
-    );
+    return shareUrl;
   }
 
   async function copyShareLink() {
     setStatus("Creating link…");
     const shareUrl = await createShareUrl();
-    await navigator.clipboard.writeText(shareUrl);
+    await copyTextToClipboard(shareUrl);
     window.history.replaceState({}, "", shareUrl);
     setStatus("Share link copied");
   }
 
   async function copySummary() {
     const text = formatShareText(makeSnapshot());
-    await navigator.clipboard.writeText(text);
+    await copyTextToClipboard(text);
     setStatus("Summary copied");
   }
 
@@ -542,7 +559,7 @@ function ShareBar({
       return;
     }
 
-    await navigator.clipboard.writeText(shareUrl);
+    await copyTextToClipboard(shareUrl);
     window.history.replaceState({}, "", shareUrl);
     setStatus("Share link copied");
   }
