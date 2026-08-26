@@ -12,8 +12,8 @@ import {
   buildSharePageUrl,
   buildShareSnapshot,
   decodeShareSnapshot,
-  encodeShareSnapshot,
   formatShareText,
+  isShortShareId,
   type ShareSnapshot,
 } from "@/lib/share";
 
@@ -128,18 +128,44 @@ export default function Home() {
     const sharedUrl = params.get("url");
 
     if (sharedToken) {
-      const snapshot = decodeShareSnapshot(sharedToken);
-
       queueMicrotask(() => {
-        if (snapshot) {
-          setResult(snapshotToResult(snapshot));
-          if (snapshot.requested_url) {
-            setUrl(snapshot.requested_url);
-          }
-          return;
-        }
+        void (async () => {
+          if (isShortShareId(sharedToken)) {
+            try {
+              const response = await fetch(`/api/share?id=${encodeURIComponent(sharedToken)}`);
+              const payload = (await response.json()) as {
+                ok?: boolean;
+                snapshot?: ShareSnapshot;
+                error?: string;
+              };
 
-        setError("This share link is invalid or too old to open.");
+              if (response.ok && payload.ok && payload.snapshot) {
+                setResult(snapshotToResult(payload.snapshot));
+                if (payload.snapshot.requested_url) {
+                  setUrl(payload.snapshot.requested_url);
+                }
+                return;
+              }
+
+              setError(payload.error ?? "This share link expired or was not found.");
+              return;
+            } catch {
+              setError("Could not open this share link.");
+              return;
+            }
+          }
+
+          const snapshot = decodeShareSnapshot(sharedToken);
+          if (snapshot) {
+            setResult(snapshotToResult(snapshot));
+            if (snapshot.requested_url) {
+              setUrl(snapshot.requested_url);
+            }
+            return;
+          }
+
+          setError("This share link is invalid or too old to open.");
+        })();
       });
       return;
     }
@@ -462,20 +488,33 @@ function ShareBar({
     });
   }
 
-  async function copyShareLink() {
+  async function createShareUrl() {
     const snapshot = makeSnapshot();
-    const token = encodeShareSnapshot(snapshot);
-    const shareUrl = buildSharePageUrl(
-      window.location.origin,
-      token,
-      snapshot.requested_url,
-    );
+    const response = await fetch("/api/share", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snapshot }),
+    });
+    const payload = (await response.json()) as {
+      ok?: boolean;
+      id?: string;
+      error?: string;
+    };
 
-    if (shareUrl.length > 7000) {
-      setStatus("Link too long — use Copy summary instead.");
-      return;
+    if (!response.ok || !payload.ok || !payload.id) {
+      throw new Error(payload.error ?? "Could not create share link");
     }
 
+    return buildSharePageUrl(
+      window.location.origin,
+      payload.id,
+      snapshot.requested_url,
+    );
+  }
+
+  async function copyShareLink() {
+    setStatus("Creating link…");
+    const shareUrl = await createShareUrl();
     await navigator.clipboard.writeText(shareUrl);
     window.history.replaceState({}, "", shareUrl);
     setStatus("Share link copied");
@@ -488,26 +527,24 @@ function ShareBar({
   }
 
   async function nativeShare() {
+    setStatus("Creating link…");
     const snapshot = makeSnapshot();
-    const token = encodeShareSnapshot(snapshot);
-    const shareUrl = buildSharePageUrl(
-      window.location.origin,
-      token,
-      snapshot.requested_url,
-    );
+    const shareUrl = await createShareUrl();
     const text = formatShareText(snapshot);
 
     if (navigator.share) {
       await navigator.share({
         title: `GTM Radar — ${company.company_name}`,
         text: text.slice(0, 500),
-        url: shareUrl.length > 7000 ? window.location.origin : shareUrl,
+        url: shareUrl,
       });
       setStatus("Shared");
       return;
     }
 
-    await copyShareLink();
+    await navigator.clipboard.writeText(shareUrl);
+    window.history.replaceState({}, "", shareUrl);
+    setStatus("Share link copied");
   }
 
   return (
