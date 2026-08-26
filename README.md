@@ -7,6 +7,14 @@ Built with one [Vaaya](https://vaaya.ai) API key instead of separate Firecrawl, 
 **Live:** [vaaya-gtm-radar.vercel.app](https://vaaya-gtm-radar.vercel.app)  
 **Repo:** [github.com/nehaprasad-dev/vaaya-gtm-radar](https://github.com/nehaprasad-dev/vaaya-gtm-radar)
 
+## Sharing insights
+
+After a successful run, use **Share insights**, **Copy link**, or **Copy summary**.
+
+- Share links look like `/?s=...&url=https://company.com`
+- Opening a share link loads the saved brief instantly (no re-run, no extra charge)
+- `/?url=https://company.com` alone prefills and auto-analyzes that company
+
 ## What it returns
 
 | Section | Contents |
