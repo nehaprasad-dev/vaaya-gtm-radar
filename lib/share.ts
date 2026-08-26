@@ -178,9 +178,15 @@ export function formatShareText(snapshot: ShareSnapshot) {
   return lines.filter((line) => line !== null).join("\n");
 }
 
-export function buildSharePageUrl(origin: string, token: string, companyUrl: string) {
+export function isShortShareId(value: string) {
+  return /^s_[a-z0-9]+$/i.test(value) && value.length <= 24;
+}
+
+export function buildSharePageUrl(origin: string, shareId: string, companyUrl?: string) {
   const page = new URL(origin);
-  page.searchParams.set("s", token);
-  page.searchParams.set("url", companyUrl);
+  page.searchParams.set("s", shareId);
+  if (companyUrl) {
+    page.searchParams.set("url", companyUrl);
+  }
   return page.toString();
 }
