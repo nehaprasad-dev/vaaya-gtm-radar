@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 
 import type {
   CompanyBrief,
@@ -8,6 +8,14 @@ import type {
   RelevantPerson,
   VendorUsed,
 } from "@/lib/company";
+import {
+  buildSharePageUrl,
+  buildShareSnapshot,
+  decodeShareSnapshot,
+  encodeShareSnapshot,
+  formatShareText,
+  type ShareSnapshot,
+} from "@/lib/share";
 
 type AnalyzeResponse = {
   ok: boolean;
@@ -24,6 +32,7 @@ type AnalyzeResponse = {
   charged_cents?: number;
   balance_remaining_cents?: number | null;
   cached?: boolean;
+  shared?: boolean;
   provider?: {
     service: string;
     action: string;
@@ -39,14 +48,40 @@ type AnalyzeResponse = {
   details?: unknown;
 };
 
+function snapshotToResult(snapshot: ShareSnapshot): AnalyzeResponse {
+  return {
+    ok: true,
+    requested_url: snapshot.requested_url,
+    company: snapshot.company,
+    market: snapshot.market,
+    market_error: snapshot.market_error,
+    people: snapshot.people,
+    people_error: snapshot.people_error,
+    akta_error: snapshot.akta_error,
+    vendors: snapshot.vendors,
+    charged_cents: 0,
+    balance_remaining_cents: null,
+    cached: true,
+    shared: true,
+  };
+}
+
+function readInitialUrl() {
+  if (typeof window === "undefined") {
+    return "https://dub.co";
+  }
+
+  return new URLSearchParams(window.location.search).get("url") ?? "https://dub.co";
+}
+
 export default function Home() {
-  const [url, setUrl] = useState("https://dub.co");
+  const [url, setUrl] = useState(readInitialUrl);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const autoStarted = useRef(false);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function runAnalyze(targetUrl: string) {
     setIsLoading(true);
     setResult(null);
     setError(null);
@@ -57,7 +92,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: targetUrl }),
       });
       const payload = (await response.json()) as AnalyzeResponse;
 
@@ -68,11 +103,57 @@ export default function Home() {
       }
 
       setResult(payload);
+
+      if (typeof window !== "undefined") {
+        const next = new URL(window.location.href);
+        next.searchParams.set("url", targetUrl);
+        next.searchParams.delete("s");
+        window.history.replaceState({}, "", next.toString());
+      }
     } catch {
       setError("Could not reach the analysis route. Is the dev server running?");
     } finally {
       setIsLoading(false);
     }
+  }
+
+  useEffect(() => {
+    if (autoStarted.current || typeof window === "undefined") {
+      return;
+    }
+
+    autoStarted.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const sharedToken = params.get("s");
+    const sharedUrl = params.get("url");
+
+    if (sharedToken) {
+      const snapshot = decodeShareSnapshot(sharedToken);
+
+      queueMicrotask(() => {
+        if (snapshot) {
+          setResult(snapshotToResult(snapshot));
+          if (snapshot.requested_url) {
+            setUrl(snapshot.requested_url);
+          }
+          return;
+        }
+
+        setError("This share link is invalid or too old to open.");
+      });
+      return;
+    }
+
+    if (sharedUrl) {
+      queueMicrotask(() => {
+        void runAnalyze(sharedUrl);
+      });
+    }
+  }, []);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await runAnalyze(url);
   }
 
   const company = result?.company;
@@ -243,7 +324,8 @@ function CompanyReport({
       <div className="grid gap-10 border-b border-[#d9d4c8] pb-10 lg:grid-cols-[1.35fr_0.65fr]">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#6b665c]">
-            Company brief {result.cached ? "· cached" : "· live"}
+            Company brief{" "}
+            {result.shared ? "· shared" : result.cached ? "· cached" : "· live"}
           </p>
           <h2 className="mt-4 font-serif text-5xl leading-[1.05] tracking-[-0.03em]">
             {company.company_name}
@@ -256,12 +338,16 @@ function CompanyReport({
           <p className="mt-5 max-w-3xl text-base leading-8 text-[#3f3b34]">
             {company.description ?? "No supported description was found."}
           </p>
+          <ShareBar company={company} result={result} />
         </div>
         <aside className="grid grid-cols-2 gap-px self-start bg-[#d9d4c8]">
           <Stat label="Departments" value={company.departments.length} />
           <Stat label="People" value={people.length} />
           <Stat label="Signals" value={market.signals.length} />
-          <Stat label="Cost" value={`${result.charged_cents ?? 0}c`} />
+          <Stat
+            label="Cost"
+            value={result.shared ? "shared" : `${result.charged_cents ?? 0}c`}
+          />
         </aside>
       </div>
 
@@ -351,6 +437,112 @@ function CompanyReport({
 
       <AuditFooter result={result} />
     </section>
+  );
+}
+
+function ShareBar({
+  company,
+  result,
+}: {
+  company: CompanyBrief;
+  result: AnalyzeResponse;
+}) {
+  const [status, setStatus] = useState<string | null>(null);
+
+  function makeSnapshot() {
+    return buildShareSnapshot({
+      requested_url: result.requested_url ?? company.website ?? "",
+      company,
+      market: result.market,
+      people: result.people,
+      vendors: result.vendors,
+      market_error: result.market_error,
+      people_error: result.people_error,
+      akta_error: result.akta_error,
+    });
+  }
+
+  async function copyShareLink() {
+    const snapshot = makeSnapshot();
+    const token = encodeShareSnapshot(snapshot);
+    const shareUrl = buildSharePageUrl(
+      window.location.origin,
+      token,
+      snapshot.requested_url,
+    );
+
+    if (shareUrl.length > 7000) {
+      setStatus("Link too long — use Copy summary instead.");
+      return;
+    }
+
+    await navigator.clipboard.writeText(shareUrl);
+    window.history.replaceState({}, "", shareUrl);
+    setStatus("Share link copied");
+  }
+
+  async function copySummary() {
+    const text = formatShareText(makeSnapshot());
+    await navigator.clipboard.writeText(text);
+    setStatus("Summary copied");
+  }
+
+  async function nativeShare() {
+    const snapshot = makeSnapshot();
+    const token = encodeShareSnapshot(snapshot);
+    const shareUrl = buildSharePageUrl(
+      window.location.origin,
+      token,
+      snapshot.requested_url,
+    );
+    const text = formatShareText(snapshot);
+
+    if (navigator.share) {
+      await navigator.share({
+        title: `GTM Radar — ${company.company_name}`,
+        text: text.slice(0, 500),
+        url: shareUrl.length > 7000 ? window.location.origin : shareUrl,
+      });
+      setStatus("Shared");
+      return;
+    }
+
+    await copyShareLink();
+  }
+
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-3">
+      <button
+        type="button"
+        onClick={() => void nativeShare().catch(() => setStatus("Share cancelled"))}
+        className="rounded-full bg-[#111] px-5 py-2.5 text-sm font-medium text-white"
+      >
+        Share insights
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void copyShareLink().catch(() => setStatus("Could not copy link"))
+        }
+        className="rounded-full border border-[#111] px-5 py-2.5 text-sm"
+      >
+        Copy link
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void copySummary().catch(() => setStatus("Could not copy summary"))
+        }
+        className="rounded-full border border-[#d9d4c8] bg-white px-5 py-2.5 text-sm"
+      >
+        Copy summary
+      </button>
+      {status ? (
+        <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b665c]">
+          {status}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -697,9 +889,11 @@ function AuditFooter({ result }: { result: AnalyzeResponse }) {
   return (
     <div className="flex flex-col justify-between gap-4 border-t border-[#d9d4c8] pt-6 text-sm text-[#6b665c] sm:flex-row sm:items-start">
       <p>
-        {result.cached
-          ? "Served from cache. No new Vaaya charge."
-          : `Vaaya charged ${result.charged_cents ?? 0} cents for this run.`}
+        {result.shared
+          ? "Opened from a shared insights link. No new Vaaya charge."
+          : result.cached
+            ? "Served from cache. No new Vaaya charge."
+            : `Vaaya charged ${result.charged_cents ?? 0} cents for this run.`}
         {typeof result.balance_remaining_cents === "number"
           ? ` ${result.balance_remaining_cents} cents remaining.`
           : ""}
