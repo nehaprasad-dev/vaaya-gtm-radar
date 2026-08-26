@@ -178,7 +178,8 @@ export function parseCompanyBrief(value: unknown): CompanyBrief | null {
   return {
     company_name: companyName,
     tagline: nullableString(value.tagline),
-    description: nullableString(value.description),
+    description: readableCompanyCopy(nullableString(value.description))
+      ?? nullableString(value.description),
     products: stringArray(value.products),
     target_customers: stringArray(value.target_customers),
     industry: nullableString(value.industry),
@@ -1045,6 +1046,41 @@ export function findScrapeMarkdown(value: unknown, depth = 0): string | null {
   return null;
 }
 
+const NAV_COPY =
+  /\b(log in|login|sign up|signup|sign in|get started|start for free|book a demo|read more|learn more|cookie|privacy|terms|subscribe|menu|pricing)\b/i;
+
+export function readableCompanyCopy(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const withoutLinks = value
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[#>*_`~]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const sentences = withoutLinks
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
+    .filter((sentence) => {
+      if (sentence.length < 28 || sentence.length > 220) {
+        return false;
+      }
+      if (NAV_COPY.test(sentence) && sentence.length < 80) {
+        return false;
+      }
+      const wordCount = sentence.split(" ").length;
+      return wordCount >= 6;
+    });
+
+  const unique = Array.from(new Set(sentences));
+  const picked = unique.slice(0, 2).join(" ");
+
+  return picked || null;
+}
+
 export function companyBriefFromScrape(
   companyUrl: string,
   markdown: string | null,
@@ -1054,16 +1090,7 @@ export function companyBriefFromScrape(
     .split(".")[0]
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
-  const cleaned = (markdown ?? "")
-    .replace(/[#>*_`]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const description =
-    cleaned.length > 80
-      ? cleaned.length > 420
-        ? `${cleaned.slice(0, 417).trimEnd()}...`
-        : cleaned
-      : null;
+  const description = readableCompanyCopy(markdown);
 
   return {
     company_name: name,
@@ -1094,20 +1121,13 @@ export function fillCompanyFromScrape(
     return { ...company, website: company.website || website };
   }
 
-  const cleaned = markdown
-    .replace(/[#>*_`]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const snippet =
-    cleaned.length > 420 ? `${cleaned.slice(0, 417).trimEnd()}...` : cleaned;
+  const scrapeCopy = readableCompanyCopy(markdown);
+  const existingCopy = readableCompanyCopy(company.description);
 
   return {
     ...company,
     website: company.website || website,
-    description:
-      company.description && company.description.length > 80
-        ? company.description
-        : snippet || company.description,
+    description: existingCopy ?? scrapeCopy ?? company.description,
   };
 }
 
