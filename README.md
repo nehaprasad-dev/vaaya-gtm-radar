@@ -14,6 +14,7 @@ After a successful run, use **Share insights**, **Copy link**, or **Copy summary
 - Share links look like `/?s=...&url=https://company.com`
 - Opening a share link loads the saved brief instantly (no re-run, no extra charge)
 - `/?url=https://company.com` alone prefills and auto-analyzes that company
+- Share links use a short id (`/?s=s_abc123`) stored for 12 hours
 
 ## What it returns
 
